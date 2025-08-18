@@ -1,8 +1,8 @@
 {
   "name": "@pubflow/react",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "React adapter for Pubflow framework with support for TanStack Router and SWR",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
   "type": "module",
