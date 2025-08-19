@@ -1,6 +1,6 @@
 {
   "name": "@pubflow/react",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "React adapter for Pubflow framework with support for TanStack Router and SWR",
   "main": "dist/index.cjs",
   "module": "dist/index.esm.js",
@@ -39,8 +39,8 @@
     "swr": "^2.2.4"
   },
   "peerDependencies": {
-    "react": ">=17.0.0",
-    "react-dom": ">=17.0.0"
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
   },
   "optionalDependencies": {},
   "devDependencies": {
@@ -51,14 +51,14 @@
     "@testing-library/react": "^14.0.0",
     "@testing-library/user-event": "^14.5.0",
     "@types/node": "^20.0.0",
-    "@types/react": "^18.0.0",
-    "@types/react-dom": "^18.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.1.0",
     "@vitest/ui": "^1.0.0",
     "eslint": "^8.0.0",
     "jsdom": "^23.0.0",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "rimraf": "^5.0.0",
     "rollup": "^3.0.0",
     "rollup-plugin-dts": "^5.0.0",

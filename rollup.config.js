@@ -25,11 +25,18 @@ export default [
     ],
     plugins: [
       peerDepsExternal(),
-      resolve(),
+      resolve({
+        preferBuiltins: false,
+        browser: true
+      }),
       commonjs(),
-      typescript({ tsconfig: './tsconfig.json' }),
+      typescript({
+        tsconfig: './tsconfig.json',
+        declaration: false,
+        declarationMap: false
+      }),
     ],
-    external: ['react', 'react-dom', '@pubflow/core', 'swr'],
+    external: ['react', 'react-dom', 'react/jsx-runtime', '@pubflow/core', 'swr'],
   },
   {
     input: 'dist/types/index.d.ts',
