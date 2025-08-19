@@ -343,7 +343,8 @@ export function PubflowProvider({
           });
         }
 
-        if (isMounted) {
+        // Only set context value if we have instances to set
+        if (isMounted && Object.keys(instancesMap).length > 0) {
           setContextValue({
             instances: instancesMap,
             defaultInstance

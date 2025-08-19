@@ -194,21 +194,32 @@ export function PasswordResetForm({
   const styles = {
     container: {
       maxWidth: '400px',
+      width: '100%',
       margin: '0 auto',
       padding: '24px',
       backgroundColor: '#ffffff',
       borderRadius: '24px',
       boxShadow: '0 8px 24px rgba(0, 0, 0, 0.1)',
-      border: '1px solid #f0f0f0'
+      border: '1px solid #f0f0f0',
+      boxSizing: 'border-box' as const
     },
     logoSection: {
+      display: 'flex',
+      flexDirection: 'column' as const,
+      justifyContent: 'center',
+      alignItems: 'center',
       textAlign: 'center' as const,
-      marginBottom: '32px'
+      marginBottom: '32px',
+      width: '100%'
     },
     logo: {
       maxWidth: '320px',
-      height: '80px',
-      marginBottom: '20px'
+      maxHeight: '80px',
+      height: 'auto',
+      width: 'auto',
+      objectFit: 'contain' as const,
+      marginBottom: '20px',
+      display: 'block'
     },
     title: {
       fontSize: '28px',
