@@ -157,7 +157,7 @@ export function PubflowProvider({
         };
       }
     }
-  }, [enableDebugTools, contextValue, loginRedirectPath, publicPaths, theme]);
+  }, [enableDebugTools]); // ✅ OPTIMIZED: Only enableDebugTools as dependency
 
   // Handle session expiration
   const handleSessionExpired = useCallback(() => {
@@ -182,6 +182,8 @@ export function PubflowProvider({
   }, [onSessionRefreshed, showSessionAlerts]);
 
   useEffect(() => {
+    let isMounted = true;
+
     const initialize = async () => {
       try {
         // Initialize instances
@@ -190,6 +192,8 @@ export function PubflowProvider({
         if (instances && instances.length > 0) {
           // Initialize multiple instances
           for (const instanceConfig of instances) {
+            if (!isMounted) return; // Prevent state updates if unmounted
+
             // Initialize configuration
             const fullConfig = initConfig({
               ...instanceConfig,
@@ -211,79 +215,92 @@ export function PubflowProvider({
             // Create auth service
             const authService = new AuthService(apiClient, storage, fullConfig);
 
-            // Get current user
+            // Get current user (optimized - no await in initialization)
             let user = null;
             let isAuthenticated = false;
 
-            try {
-              user = await authService.getCurrentUser();
-              isAuthenticated = !!user;
-            } catch (error) {
+            // Don't block initialization with API calls
+            authService.getCurrentUser().then(currentUser => {
+              if (isMounted && currentUser) {
+                setContextValue(prev => ({
+                  ...prev,
+                  instances: {
+                    ...prev.instances,
+                    [instanceConfig.id]: {
+                      ...prev.instances[instanceConfig.id],
+                      user: currentUser,
+                      isAuthenticated: true,
+                      isLoading: false
+                    }
+                  }
+                }));
+              }
+            }).catch(error => {
               console.error(`Error getting current user for instance ${instanceConfig.id}:`, error);
-            }
+            });
 
-            // Create instance
-            instancesMap[instanceConfig.id] = {
-              config: fullConfig,
-              apiClient,
-              authService,
-              user,
-              isAuthenticated,
-              isLoading: false,
-              login: async (credentials) => {
+            // Create instance with optimized functions
+            const createInstanceFunctions = (id: string) => ({
+              login: async (credentials: any) => {
                 const result = await authService.login(credentials);
-
-                if (result.success && result.user) {
-                  // Update instance
+                if (result.success && result.user && isMounted) {
                   setContextValue(prev => ({
                     ...prev,
                     instances: {
                       ...prev.instances,
-                      [instanceConfig.id]: {
-                        ...prev.instances[instanceConfig.id],
+                      [id]: {
+                        ...prev.instances[id],
                         user: result.user,
                         isAuthenticated: true
                       }
                     }
                   }));
                 }
-
                 return result;
               },
               logout: async () => {
                 await authService.logout();
-
-                // Update instance
-                setContextValue(prev => ({
-                  ...prev,
-                  instances: {
-                    ...prev.instances,
-                    [instanceConfig.id]: {
-                      ...prev.instances[instanceConfig.id],
-                      user: null,
-                      isAuthenticated: false
+                if (isMounted) {
+                  setContextValue(prev => ({
+                    ...prev,
+                    instances: {
+                      ...prev.instances,
+                      [id]: {
+                        ...prev.instances[id],
+                        user: null,
+                        isAuthenticated: false
+                      }
                     }
-                  }
-                }));
+                  }));
+                }
               },
               validateSession: async () => {
                 const result = await authService.validateSession();
-
-                // Update instance
-                setContextValue(prev => ({
-                  ...prev,
-                  instances: {
-                    ...prev.instances,
-                    [instanceConfig.id]: {
-                      ...prev.instances[instanceConfig.id],
-                      user: result.user || null,
-                      isAuthenticated: result.isValid
+                if (isMounted) {
+                  setContextValue(prev => ({
+                    ...prev,
+                    instances: {
+                      ...prev.instances,
+                      [id]: {
+                        ...prev.instances[id],
+                        user: result.user || null,
+                        isAuthenticated: result.isValid
+                      }
                     }
-                  }
-                }));
-
+                  }));
+                }
                 return result;
               }
+            });
+
+            instancesMap[instanceConfig.id] = {
+              config: fullConfig,
+              apiClient,
+              authService,
+              user,
+              isAuthenticated,
+              isLoading: true, // Start as loading
+              ...createInstanceFunctions(instanceConfig.id)
             };
           }
         } else if (config) {
@@ -399,6 +416,11 @@ export function PubflowProvider({
     };
 
     initialize();
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
   }, [config, instances, defaultInstance, handleSessionExpired, handleSessionRefreshed]);
 
   // Show loading state
