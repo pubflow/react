@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { processLogoUrl } from '../../utils/asset-utils';
 
 /**
  * Account creation form configuration
@@ -336,7 +337,7 @@ export function AccountCreationForm({
             <div style={styles.logoSection}>
               {logo && (
                 typeof logo === 'string' ? (
-                  <img src={logo} alt={`${appName} Logo`} style={styles.logo} />
+                  <img src={processLogoUrl(logo) as string} alt={`${appName} Logo`} style={styles.logo} />
                 ) : (
                   logo
                 )

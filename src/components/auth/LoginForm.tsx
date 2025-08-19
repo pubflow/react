@@ -4,8 +4,9 @@
  * Professional login form with dynamic styling based on environment variables
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
+import { processLogoUrl } from '../../utils/asset-utils';
 
 /**
  * Login form configuration
@@ -296,7 +297,7 @@ export function LoginForm({
       <div style={styles.logoSection}>
         {logo && (
           typeof logo === 'string' ? (
-            <img src={logo} alt={`${appName} Logo`} style={styles.logo} />
+            <img src={processLogoUrl(logo) as string} alt={`${appName} Logo`} style={styles.logo} />
           ) : (
             logo
           )

@@ -4,3 +4,4 @@
 
 export * from './auth-utils';
 export * from './persistent-cache';
+export * from './asset-utils';
