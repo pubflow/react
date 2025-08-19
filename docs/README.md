@@ -20,8 +20,10 @@ Welcome to the Pubflow React documentation. This documentation provides comprehe
 
 ## Core Concepts
 
-- [Authentication](./authentication.md) (coming soon)
-- [Data Fetching](./data-fetching.md) (coming soon)
+- [Authentication](./hooks-reference.md#authentication-hooks)
+- [Authentication Guard](./hooks-reference.md#useauthguard)
+- [Authentication Examples](./authentication-examples.md)
+- [Data Fetching](./hooks-reference.md#data-hooks)
 - [Schema Validation](./schema-validation.md)
 - [CRUD Operations](./crud-reference.md)
 - [Components](./components-reference.md)

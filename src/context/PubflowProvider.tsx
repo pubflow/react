@@ -2,6 +2,7 @@
  * Pubflow Provider for React
  *
  * Provides a context provider for Pubflow in React applications
+ * Following the same pattern as Next.js and React Native packages
  */
 
 import React, { createContext, useState, useEffect, useCallback } from 'react';
@@ -48,26 +49,6 @@ export const PubflowContext = createContext<PubflowContextValue>({
 });
 
 /**
- * Persistent cache configuration
- */
-export interface PersistentCacheConfig {
-  /**
-   * Whether to enable persistent cache
-   */
-  enabled: boolean;
-
-  /**
-   * Cache provider function
-   */
-  provider?: () => Map<any, any>;
-
-  /**
-   * Cache options
-   */
-  options?: any;
-}
-
-/**
  * Pubflow provider props
  */
 export interface PubflowProviderProps {
@@ -75,126 +56,68 @@ export interface PubflowProviderProps {
   config?: PubflowInstanceConfig;
   instances?: PubflowInstanceConfig[];
   defaultInstance?: string;
-  onSessionExpired?: () => void;
-  onSessionRefreshed?: () => void;
-  showSessionAlerts?: boolean;
-
-  /**
-   * Persistent cache configuration
-   */
-  persistentCache?: PersistentCacheConfig;
-
-  /**
-   * Login redirect path (for automatic redirects)
-   */
-  loginRedirectPath?: string;
-
-  /**
-   * Public paths that don't require authentication
-   */
-  publicPaths?: string[];
-
-  /**
-   * Enable debug tools
-   * When enabled, debug utilities will be available
-   * Default: false
-   */
   enableDebugTools?: boolean;
-
-  /**
-   * Theme configuration
-   */
+  showSessionAlerts?: boolean;
+  persistentCache?: {
+    enabled: boolean;
+    maxAge?: number;
+  };
   theme?: {
     primaryColor?: string;
     secondaryColor?: string;
     appName?: string;
-    logo?: string | React.ReactNode;
+    logo?: string;
   };
+  loginRedirectPath?: string;
+  publicPaths?: string[];
 }
 
 /**
- * Pubflow provider for React
+ * Pubflow Provider Component
  */
 export function PubflowProvider({
   children,
   config,
   instances,
   defaultInstance = 'default',
-  onSessionExpired,
-  onSessionRefreshed,
+  enableDebugTools = false,
   showSessionAlerts = false,
   persistentCache = { enabled: false },
+  theme = {},
   loginRedirectPath = '/login',
-  publicPaths = ['/login', '/register', '/forgot-password'],
-  enableDebugTools = false,
-  theme = {}
+  publicPaths = []
 }: PubflowProviderProps) {
-  const [isInitialized, setIsInitialized] = useState(false);
   const [contextValue, setContextValue] = useState<PubflowContextValue>({
     instances: {},
     defaultInstance
   });
 
-  // Configure debug tools
-  useEffect(() => {
-    if (enableDebugTools) {
-      console.log('Pubflow debug tools enabled');
-
-      // Add debug utilities to window object
-      if (typeof window !== 'undefined') {
-        (window as any).pubflowDebug = {
-          getInstances: () => contextValue.instances,
-          getDefaultInstance: () => contextValue.defaultInstance,
-          clearStorage: async () => {
-            const storage = new BrowserStorageAdapter();
-            await storage.removeItem('pubflow_session_id');
-            await storage.removeItem('pubflow_user_data');
-            console.log('Pubflow storage cleared');
-          },
-          loginRedirectPath,
-          publicPaths,
-          theme
-        };
-      }
-    }
-  }, [enableDebugTools]); // ✅ OPTIMIZED: Only enableDebugTools as dependency
-
-  // Handle session expiration
+  // Session handlers
   const handleSessionExpired = useCallback(() => {
-    if (showSessionAlerts) {
-      alert('Your session has expired. Please log in again.');
+    if (showSessionAlerts && typeof window !== 'undefined') {
+      console.warn('Session expired');
     }
+  }, [showSessionAlerts]);
 
-    if (onSessionExpired) {
-      onSessionExpired();
-    }
-  }, [onSessionExpired, showSessionAlerts]);
-
-  // Handle session refresh
   const handleSessionRefreshed = useCallback(() => {
-    if (showSessionAlerts) {
-      alert('Your session has been refreshed.');
+    if (showSessionAlerts && typeof window !== 'undefined') {
+      console.log('Session refreshed');
     }
+  }, [showSessionAlerts]);
 
-    if (onSessionRefreshed) {
-      onSessionRefreshed();
-    }
-  }, [onSessionRefreshed, showSessionAlerts]);
-
+  // Initialize instances
   useEffect(() => {
     let isMounted = true;
 
     const initialize = async () => {
       try {
-        // Initialize instances
         const instancesMap: Record<string, PubflowInstance> = {};
 
         if (instances && instances.length > 0) {
           // Initialize multiple instances
           for (const instanceConfig of instances) {
-            if (!isMounted) return; // Prevent state updates if unmounted
+            if (!isMounted) return;
 
-            // Initialize configuration
             const fullConfig = initConfig({
               ...instanceConfig,
               sessionConfig: {
@@ -204,54 +127,36 @@ export function PubflowProvider({
               }
             }, instanceConfig.id);
 
-            // Create storage adapter
             const storage = new BrowserStorageAdapter({
               prefix: fullConfig.storageConfig?.prefix
             });
 
-            // Create API client
             const apiClient = new ApiClient(fullConfig, storage);
-
-            // Create auth service
             const authService = new AuthService(apiClient, storage, fullConfig);
 
-            // Get current user (optimized - no await in initialization)
+            // Get current user (non-blocking)
             let user = null;
             let isAuthenticated = false;
 
-            // Don't block initialization with API calls
-            authService.getCurrentUser().then(currentUser => {
-              if (isMounted && currentUser) {
-                setContextValue(prev => ({
-                  ...prev,
-                  instances: {
-                    ...prev.instances,
-                    [instanceConfig.id]: {
-                      ...prev.instances[instanceConfig.id],
-                      user: currentUser,
-                      isAuthenticated: true,
-                      isLoading: false
-                    }
-                  }
-                }));
-              }
-            }).catch(error => {
-              console.error(`Error getting current user for instance ${instanceConfig.id}:`, error);
-            });
-
-            // Create instance with optimized functions
-            const createInstanceFunctions = (id: string) => ({
-              login: async (credentials: any) => {
+            instancesMap[instanceConfig.id] = {
+              config: fullConfig,
+              apiClient,
+              authService,
+              user,
+              isAuthenticated,
+              isLoading: true,
+              login: async (credentials) => {
                 const result = await authService.login(credentials);
                 if (result.success && result.user && isMounted) {
                   setContextValue(prev => ({
                     ...prev,
                     instances: {
                       ...prev.instances,
-                      [id]: {
-                        ...prev.instances[id],
+                      [instanceConfig.id]: {
+                        ...prev.instances[instanceConfig.id],
                         user: result.user,
-                        isAuthenticated: true
+                        isAuthenticated: true,
+                        isLoading: false
                       }
                     }
                   }));
@@ -265,10 +170,11 @@ export function PubflowProvider({
                     ...prev,
                     instances: {
                       ...prev.instances,
-                      [id]: {
-                        ...prev.instances[id],
+                      [instanceConfig.id]: {
+                        ...prev.instances[instanceConfig.id],
                         user: null,
-                        isAuthenticated: false
+                        isAuthenticated: false,
+                        isLoading: false
                       }
                     }
                   }));
@@ -281,31 +187,52 @@ export function PubflowProvider({
                     ...prev,
                     instances: {
                       ...prev.instances,
-                      [id]: {
-                        ...prev.instances[id],
+                      [instanceConfig.id]: {
+                        ...prev.instances[instanceConfig.id],
                         user: result.user || null,
-                        isAuthenticated: result.isValid
+                        isAuthenticated: result.isValid,
+                        isLoading: false
                       }
                     }
                   }));
                 }
                 return result;
               }
-            });
-
-            instancesMap[instanceConfig.id] = {
-              config: fullConfig,
-              apiClient,
-              authService,
-              user,
-              isAuthenticated,
-              isLoading: true, // Start as loading
-              ...createInstanceFunctions(instanceConfig.id)
             };
+
+            // Load user asynchronously
+            authService.getCurrentUser().then(currentUser => {
+              if (isMounted) {
+                setContextValue(prev => ({
+                  ...prev,
+                  instances: {
+                    ...prev.instances,
+                    [instanceConfig.id]: {
+                      ...prev.instances[instanceConfig.id],
+                      user: currentUser,
+                      isAuthenticated: !!currentUser,
+                      isLoading: false
+                    }
+                  }
+                }));
+              }
+            }).catch(() => {
+              if (isMounted) {
+                setContextValue(prev => ({
+                  ...prev,
+                  instances: {
+                    ...prev.instances,
+                    [instanceConfig.id]: {
+                      ...prev.instances[instanceConfig.id],
+                      isLoading: false
+                    }
+                  }
+                }));
+              }
+            });
           }
         } else if (config) {
-          // Initialize single instance
-          // Initialize configuration
+          // Single instance mode (simplified)
           const fullConfig = initConfig({
             ...config,
             sessionConfig: {
@@ -313,43 +240,25 @@ export function PubflowProvider({
               onSessionExpired: handleSessionExpired,
               onSessionRefreshed: handleSessionRefreshed
             }
-          }, defaultInstance);
+          }, config.id || defaultInstance);
 
-          // Create storage adapter
           const storage = new BrowserStorageAdapter({
             prefix: fullConfig.storageConfig?.prefix
           });
 
-          // Create API client
           const apiClient = new ApiClient(fullConfig, storage);
-
-          // Create auth service
           const authService = new AuthService(apiClient, storage, fullConfig);
 
-          // Get current user
-          let user = null;
-          let isAuthenticated = false;
-
-          try {
-            user = await authService.getCurrentUser();
-            isAuthenticated = !!user;
-          } catch (error) {
-            console.error('Error getting current user:', error);
-          }
-
-          // Create instance
           instancesMap[defaultInstance] = {
             config: fullConfig,
             apiClient,
             authService,
-            user,
-            isAuthenticated,
-            isLoading: false,
+            user: null,
+            isAuthenticated: false,
+            isLoading: true,
             login: async (credentials) => {
               const result = await authService.login(credentials);
-
-              if (result.success && result.user) {
-                // Update instance
+              if (result.success && result.user && isMounted) {
                 setContextValue(prev => ({
                   ...prev,
                   instances: {
@@ -357,59 +266,89 @@ export function PubflowProvider({
                     [defaultInstance]: {
                       ...prev.instances[defaultInstance],
                       user: result.user,
-                      isAuthenticated: true
+                      isAuthenticated: true,
+                      isLoading: false
                     }
                   }
                 }));
               }
-
               return result;
             },
             logout: async () => {
               await authService.logout();
-
-              // Update instance
-              setContextValue(prev => ({
-                ...prev,
-                instances: {
-                  ...prev.instances,
-                  [defaultInstance]: {
-                    ...prev.instances[defaultInstance],
-                    user: null,
-                    isAuthenticated: false
+              if (isMounted) {
+                setContextValue(prev => ({
+                  ...prev,
+                  instances: {
+                    ...prev.instances,
+                    [defaultInstance]: {
+                      ...prev.instances[defaultInstance],
+                      user: null,
+                      isAuthenticated: false,
+                      isLoading: false
+                    }
                   }
-                }
-              }));
+                }));
+              }
             },
             validateSession: async () => {
               const result = await authService.validateSession();
+              if (isMounted) {
+                setContextValue(prev => ({
+                  ...prev,
+                  instances: {
+                    ...prev.instances,
+                    [defaultInstance]: {
+                      ...prev.instances[defaultInstance],
+                      user: result.user || null,
+                      isAuthenticated: result.isValid,
+                      isLoading: false
+                    }
+                  }
+                }));
+              }
+              return result;
+            }
+          };
 
-              // Update instance
+          // Load user asynchronously
+          authService.getCurrentUser().then(currentUser => {
+            if (isMounted) {
               setContextValue(prev => ({
                 ...prev,
                 instances: {
                   ...prev.instances,
                   [defaultInstance]: {
                     ...prev.instances[defaultInstance],
-                    user: result.user || null,
-                    isAuthenticated: result.isValid
+                    user: currentUser,
+                    isAuthenticated: !!currentUser,
+                    isLoading: false
                   }
                 }
               }));
-
-              return result;
             }
-          };
+          }).catch(() => {
+            if (isMounted) {
+              setContextValue(prev => ({
+                ...prev,
+                instances: {
+                  ...prev.instances,
+                  [defaultInstance]: {
+                    ...prev.instances[defaultInstance],
+                    isLoading: false
+                  }
+                }
+              }));
+            }
+          });
         }
 
-        // Set context value
-        setContextValue({
-          instances: instancesMap,
-          defaultInstance
-        });
-
-        // Set initialized
-        setIsInitialized(true);
+        if (isMounted) {
+          setContextValue({
+            instances: instancesMap,
+            defaultInstance
+          });
+        }
       } catch (error) {
         console.error('Error initializing Pubflow:', error);
       }
@@ -417,32 +356,37 @@ export function PubflowProvider({
 
     initialize();
 
-    // Cleanup function
     return () => {
       isMounted = false;
     };
   }, [config, instances, defaultInstance, handleSessionExpired, handleSessionRefreshed]);
 
-  // Show loading state
-  if (!isInitialized) {
-    return null;
-  }
+  // Debug tools (simplified)
+  useEffect(() => {
+    if (enableDebugTools && typeof window !== 'undefined') {
+      (window as any).pubflowDebug = {
+        getInstances: () => contextValue.instances,
+        getDefaultInstance: () => contextValue.defaultInstance
+      };
+    }
+  }, [enableDebugTools]);
 
-  // If persistent cache is enabled, wrap with SWRConfig
-  if (persistentCache.enabled && persistentCache.provider) {
-    return (
-      <SWRConfig value={{ provider: persistentCache.provider }}>
-        <PubflowContext.Provider value={contextValue}>
-          {children}
-        </PubflowContext.Provider>
-      </SWRConfig>
-    );
-  }
+  // SWR configuration
+  const swrConfig = {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: true,
+    ...(persistentCache.enabled && {
+      provider: () => new Map(),
+      isOnline: () => true,
+      isVisible: () => true
+    })
+  };
 
-  // Otherwise, just use the regular provider
   return (
     <PubflowContext.Provider value={contextValue}>
-      {children}
+      <SWRConfig value={swrConfig}>
+        {children}
+      </SWRConfig>
     </PubflowContext.Provider>
   );
 }

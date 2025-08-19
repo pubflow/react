@@ -6,7 +6,8 @@ This document provides a comprehensive reference for all hooks available in the 
 
 - [Authentication Hooks](#authentication-hooks)
   - [useAuth](#useauth)
-  - [useRequireAuth](#userequireauth)
+  - [useAuthGuard](#useauthguard)
+  - [useSimpleAuthGuard](#usesimpleauthguard)
 - [Data Hooks](#data-hooks)
   - [useBridgeApi](#usebridgeapi)
   - [useBridgeQuery](#usebridgequery)
@@ -70,35 +71,63 @@ function Profile() {
 | validateSession | () => Promise<{ isValid: boolean; expiresAt?: string }> | Function to validate the current session |
 | refreshUser | () => Promise<User \| null> | Function to refresh user data |
 
-### useRequireAuth
+### useAuthGuard
 
-The `useRequireAuth` hook provides a way to protect routes that require authentication.
+The `useAuthGuard` hook provides advanced route protection with automatic session validation and flexible redirect handling. This is a framework-agnostic hook that works with any React router.
 
 #### Usage
 
+**With TanStack Start:**
 ```jsx
-import { useRequireAuth } from '@pubflow/react';
-import { useNavigate } from 'react-router-dom';
+import { useAuthGuard } from '@pubflow/react';
+import { useNavigate } from '@tanstack/react-router';
 
-function AdminPage() {
+function ProtectedPage() {
   const navigate = useNavigate();
-  
-  const { user, isAuthenticated, isLoading } = useRequireAuth({
-    allowedTypes: 'admin',
-    redirectTo: '/login',
-    redirectFn: (path) => navigate(path)
+
+  const { user, isAuthenticated, isLoading, isAuthorized } = useAuthGuard({
+    validateOnMount: true,
+    allowedTypes: ['authenticated'],
+    onRedirect: (path, reason) => {
+      console.log(`Redirecting to ${path} because: ${reason}`);
+      navigate({ to: path });
+    },
+    onSessionExpired: () => {
+      console.log('Session expired, cleaning up...');
+    },
+    enableLogging: true
   });
-  
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-  
+
+  if (isLoading) return <div>Loading...</div>;
+
   return (
     <div>
-      <h1>Admin Dashboard</h1>
-      <p>Welcome, {user.name}!</p>
+      <h1>Protected Content</h1>
+      <p>Welcome, {user?.name}!</p>
     </div>
   );
+}
+```
+
+**With Next.js:**
+```jsx
+import { useAuthGuard } from '@pubflow/react';
+import { useRouter } from 'next/router';
+
+function AdminPanel() {
+  const router = useRouter();
+
+  const { user, isAuthorized } = useAuthGuard({
+    allowedTypes: ['admin'],
+    onRedirect: (path, reason) => {
+      if (reason === 'unauthorized') {
+        alert('Admin access required');
+      }
+      router.push(path);
+    }
+  });
+
+  return <div>Admin Panel for {user?.name}</div>;
 }
 ```
 
@@ -106,24 +135,66 @@ function AdminPage() {
 
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
-| options | UseRequireAuthOptions | Options for the hook | {} |
+| options | UseAuthGuardOptions | Configuration options | {} |
 
-##### UseRequireAuthOptions
+##### UseAuthGuardOptions
 
 | Property | Type | Description | Default |
 |----------|------|-------------|---------|
-| allowedTypes | string \| string[] | User types allowed to access the route | ['authenticated'] |
-| redirectTo | string | Path to redirect to when not authenticated | '/login' |
-| redirectFn | (path: string) => void | Function to handle redirection | window.location.href = path |
-| instanceId | string | Pubflow instance ID | 'default' |
+| validateOnMount | boolean | Validate session when component mounts | true |
+| allowedTypes | string[] | User types allowed to access | ['authenticated'] |
+| onRedirect | (path: string, reason: string) => void | Custom redirect function | undefined |
+| onSessionExpired | () => void | Callback when session expires | undefined |
+| loginRedirectPath | string | Path to redirect for login | '/login' |
+| accessDeniedPath | string | Path to redirect for access denied | '/access-denied' |
+| enableLogging | boolean | Enable console logging | false |
+| instanceId | string | Pubflow instance ID | undefined |
 
 #### Return Value
 
 | Property | Type | Description |
 |----------|------|-------------|
-| user | User \| null | Current user or null if not authenticated |
-| isAuthenticated | boolean | Whether the user is authenticated |
-| isLoading | boolean | Whether authentication is being checked |
+| user | User \| null | Current user data |
+| isAuthenticated | boolean | Whether user is authenticated |
+| isLoading | boolean | Whether authentication is loading |
+| isAuthorized | boolean | Whether user has required permissions |
+| validateSession | () => Promise<{isValid: boolean}> | Manual session validation |
+| redirectReason | string \| null | Reason for redirect if applicable |
+
+### useSimpleAuthGuard
+
+A simplified version of `useAuthGuard` that uses `window.location` for redirects. Perfect for simple React apps without complex routing.
+
+#### Usage
+
+```jsx
+import { useSimpleAuthGuard } from '@pubflow/react';
+
+function Dashboard() {
+  const { user, isAuthenticated, isLoading } = useSimpleAuthGuard({
+    validateOnMount: true,
+    allowedTypes: ['authenticated'],
+    enableLogging: true
+  });
+
+  if (isLoading) return <div>Loading...</div>;
+
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <p>Welcome, {user?.name}!</p>
+    </div>
+  );
+}
+```
+
+#### Parameters
+
+Same as `useAuthGuard` except `onRedirect` is handled automatically using `window.location.href`.
+
+#### Return Value
+
+Same as `useAuthGuard`.
 
 ## Data Hooks
 

@@ -9,6 +9,7 @@ This guide explains how to integrate the Pubflow React adapter with various Reac
 - [Next.js Integration](#nextjs-integration)
 - [Create React App Integration](#create-react-app-integration)
 - [Vite Integration](#vite-integration)
+- [TanStack Start Integration](#tanstack-start-integration)
 - [Advanced Usage](#advanced-usage)
 
 ## Overview
@@ -18,6 +19,7 @@ The `@pubflow/react` adapter is designed to work with any React-based framework.
 Key features supported across all frameworks:
 
 - Authentication (login, logout, session validation)
+- **Authentication Guard** (route protection with automatic redirects)
 - Data fetching with SWR (queries, mutations, CRUD operations)
 - UI components (tables, conditional rendering)
 - Schema validation
@@ -122,30 +124,38 @@ export default function Dashboard() {
 
 ### Client-Side Authentication
 
-For client-side authentication, use the `useRequireAuth` hook:
+For client-side authentication, use the `useAuthGuard` hook:
 
 ```jsx
 // app/routes/admin.jsx
-import { useRequireAuth } from '@pubflow/react';
+import { useAuthGuard } from '@pubflow/react';
 
 export default function Admin() {
-  // Client-side authentication check
-  const { user, isAuthenticated, isLoading } = useRequireAuth({
-    allowedTypes: 'admin',
-    redirectTo: '/login',
-    redirectFn: (path) => {
+  // Client-side authentication check with automatic session validation
+  const { user, isAuthenticated, isLoading, isAuthorized } = useAuthGuard({
+    validateOnMount: true,
+    allowedTypes: ['admin'],
+    onRedirect: (path, reason) => {
+      console.log(`Redirecting to ${path} because: ${reason}`);
       window.location.href = path;
-    }
+    },
+    onSessionExpired: () => {
+      console.log('Admin session expired');
+    },
+    loginRedirectPath: '/login',
+    accessDeniedPath: '/access-denied',
+    enableLogging: true
   });
-  
+
   if (isLoading) {
     return <div>Loading...</div>;
   }
-  
+
   return (
     <div>
       <h1>Admin Dashboard</h1>
       <p>Welcome, {user?.name}!</p>
+      <p>Authorization Status: {isAuthorized ? 'Authorized' : 'Not Authorized'}</p>
     </div>
   );
 }
@@ -228,17 +238,17 @@ export default MyApp;
 
 ### Authentication
 
-Use the `useRequireAuth` hook for client-side authentication:
+Use the `useAuthGuard` hook for client-side authentication:
 
 ```jsx
 // pages/dashboard.js
 import { useRouter } from 'next/router';
-import { useRequireAuth } from '@pubflow/react';
+import { useAuthGuard } from '@pubflow/react';
 
 export default function Dashboard() {
   const router = useRouter();
-  
-  // Client-side authentication check
+
+  // Client-side authentication check with session validation
   const { user, isAuthenticated, isLoading } = useRequireAuth({
     allowedTypes: ['admin', 'user'],
     redirectTo: '/login',
@@ -423,6 +433,127 @@ export default App;
 ```
 
 The rest of the integration is similar to Create React App.
+
+## TanStack Start Integration
+
+TanStack Start is a modern React framework with built-in routing. The `@pubflow/react` adapter works seamlessly with TanStack Start's routing system.
+
+### Setup
+
+First, install the required packages:
+
+```bash
+npm install @pubflow/core @pubflow/react swr
+```
+
+Then, create a Pubflow provider in your root route:
+
+```tsx
+// src/routes/__root.tsx
+import { createRootRoute, Outlet } from '@tanstack/react-router';
+import { PubflowProvider } from '@pubflow/react';
+
+export const Route = createRootRoute({
+  component: RootComponent,
+});
+
+function RootComponent() {
+  return (
+    <PubflowProvider
+      config={{
+        id: 'default',
+        baseUrl: 'https://api.example.com',
+        authBasePath: '/auth'
+      }}
+    >
+      <div>
+        <nav>
+          {/* Your navigation */}
+        </nav>
+        <main>
+          <Outlet />
+        </main>
+      </div>
+    </PubflowProvider>
+  );
+}
+```
+
+### Protected Routes
+
+Use the `useAuthGuard` hook with TanStack Start's navigation:
+
+```tsx
+// src/routes/dashboard.tsx
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useAuthGuard } from '@pubflow/react';
+
+export const Route = createFileRoute('/dashboard')({
+  component: Dashboard,
+});
+
+function Dashboard() {
+  const navigate = useNavigate();
+
+  const { user, isAuthenticated, isLoading } = useAuthGuard({
+    validateOnMount: true,
+    allowedTypes: ['authenticated'],
+    onRedirect: (path, reason) => {
+      console.log(`Redirecting to ${path} because: ${reason}`);
+      navigate({ to: path });
+    },
+    onSessionExpired: () => {
+      console.log('Session expired, cleaning up...');
+    },
+    enableLogging: true
+  });
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  return (
+    <div>
+      <h1>Dashboard</h1>
+      <p>Welcome, {user?.name}!</p>
+    </div>
+  );
+}
+```
+
+### Admin-Only Routes
+
+```tsx
+// src/routes/admin.tsx
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useAuthGuard } from '@pubflow/react';
+
+export const Route = createFileRoute('/admin')({
+  component: AdminPanel,
+});
+
+function AdminPanel() {
+  const navigate = useNavigate();
+
+  const { user, isAuthorized } = useAuthGuard({
+    allowedTypes: ['admin'],
+    onRedirect: (path, reason) => {
+      if (reason === 'unauthorized') {
+        alert('Admin access required');
+      }
+      navigate({ to: path });
+    },
+    accessDeniedPath: '/access-denied'
+  });
+
+  return (
+    <div>
+      <h1>Admin Panel</h1>
+      <p>Welcome, Admin {user?.name}!</p>
+    </div>
+  );
+}
+```
 
 ## Advanced Usage
 

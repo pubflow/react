@@ -26,11 +26,12 @@ export * from './context/PubflowProvider';
 
 // Export hooks
 export * from './hooks/useAuth';
+export * from './hooks/useAuthGuard';
 export * from './hooks/useBridgeApi';
 export * from './hooks/useBridgeApiRaw';
 export * from './hooks/useBridgeQuery';
 export * from './hooks/useBridgeMutation';
-export * from './hooks/useServerAuth';
+
 export * from './hooks/useSearchQueryBuilder';
 
 // Explicitly re-export to avoid conflicts
