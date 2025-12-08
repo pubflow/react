@@ -2,12 +2,19 @@
 
 React adapter for the Pubflow framework with support for any React-based framework.
 
+## 📚 Documentation
+
+- **Flowless (Authentication Backend)**: [https://flowless.dev/](https://flowless.dev/)
+- **Flowfull Client Libraries**: [https://clients.flowfull.dev/](https://clients.flowfull.dev/)
+- **Bridge Payments**: [https://bridgepayments.dev/](https://bridgepayments.dev/)
+
 ## Features
 
 - Complete React integration for Pubflow
 - SWR for data fetching and caching
 - Framework-agnostic design (works with any React framework)
 - Support for Remix, Next.js, Create React App, and more
+- **Bridge Payment Client** for payment processing (NEW in v0.4.0)
 - Optimized for React 17+
 - TypeScript support
 - Customizable components
