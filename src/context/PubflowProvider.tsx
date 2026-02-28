@@ -23,6 +23,7 @@ import { BrowserStorageAdapter } from '../storage/BrowserStorageAdapter';
 export interface PubflowContextValue {
   instances: Record<string, PubflowInstance>;
   defaultInstance: string;
+  isReady: boolean;
 }
 
 /**
@@ -45,7 +46,8 @@ export interface PubflowInstance {
  */
 export const PubflowContext = createContext<PubflowContextValue>({
   instances: {},
-  defaultInstance: 'default'
+  defaultInstance: 'default',
+  isReady: false
 });
 
 /**
@@ -89,7 +91,8 @@ export function PubflowProvider({
 }: PubflowProviderProps) {
   const [contextValue, setContextValue] = useState<PubflowContextValue>({
     instances: {},
-    defaultInstance
+    defaultInstance,
+    isReady: false
   });
 
   // Session handlers
@@ -347,8 +350,12 @@ export function PubflowProvider({
         if (isMounted && Object.keys(instancesMap).length > 0) {
           setContextValue({
             instances: instancesMap,
-            defaultInstance
+            defaultInstance,
+            isReady: true
           });
+        } else if (isMounted) {
+          // Even if no instances configured correctly, mark ready so useAuth can react
+          setContextValue(prev => ({ ...prev, isReady: true }));
         }
       } catch (error) {
         console.error('Error initializing Pubflow:', error);

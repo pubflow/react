@@ -36,6 +36,20 @@ export function useAuth(instanceId?: string): UseAuthResult {
   const instance = instanceId || context.defaultInstance;
   const pubflowInstance = context.instances[instance];
 
+  // If the provider hasn't finished its initial useEffect setup,
+  // instances won't exist yet. Return a loading state instead of crashing.
+  if (!context.isReady) {
+    return {
+      user: null,
+      isAuthenticated: false,
+      isLoading: true, // Crucial: tell the UI we are still loading the provider
+      login: async () => { throw new Error('Pubflow not initialized yet'); },
+      logout: async () => { throw new Error('Pubflow not initialized yet'); },
+      validateSession: async () => ({ isValid: false }),
+    };
+  }
+
+  // After provider is ready, if the instance is STILL missing, it's a real config error.
   if (!pubflowInstance) {
     throw new Error(`Pubflow instance '${instance}' not found`);
   }
