@@ -86,8 +86,9 @@ class SimpleApiClient {
     };
 
     if (sessionId) {
-      headers['X-Session-Id'] = sessionId;
+      (headers as Record<string, string>)['X-Session-Id'] = sessionId;
     }
+
 
     const response = await fetch(url, {
       ...options,

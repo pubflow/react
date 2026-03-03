@@ -31,6 +31,7 @@ export * from './hooks/useBridgeApi';
 export * from './hooks/useBridgeApiRaw';
 export * from './hooks/useBridgeQuery';
 export * from './hooks/useBridgeMutation';
+export * from './hooks/useTwoFactor';
 
 export * from './hooks/useSearchQueryBuilder';
 

@@ -32,9 +32,11 @@ export default [
       commonjs(),
       typescript({
         tsconfig: './tsconfig.json',
-        declaration: false,
-        declarationMap: false
+        declaration: true,
+        declarationDir: 'dist/types',
+        declarationMap: false,
       }),
+
     ],
     external: ['react', 'react-dom', 'react/jsx-runtime', '@pubflow/core', 'swr'],
   },

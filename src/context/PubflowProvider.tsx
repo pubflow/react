@@ -13,7 +13,11 @@ import {
   PubflowInstanceConfig,
   ApiClient,
   AuthService,
-  User
+  TwoFactorService,
+  User,
+  type TwoFactorMethod,
+  type TwoFactorVerifyResult,
+  type TwoFactorStartResult,
 } from '@pubflow/core';
 import { BrowserStorageAdapter } from '../storage/BrowserStorageAdapter';
 
@@ -33,12 +37,20 @@ export interface PubflowInstance {
   config: PubflowInstanceConfig;
   apiClient: ApiClient;
   authService: AuthService;
+  twoFactorService: TwoFactorService;
   user: User | null | undefined;  // Allow undefined to fix type issues
   isAuthenticated: boolean;
   isLoading: boolean;
+  // 2FA pending state
+  twoFactorPending: boolean;
+  twoFactorMethods: TwoFactorMethod[];
+  // Auth actions
   login: (credentials: { email?: string; userName?: string; password: string }) => Promise<any>;
   logout: () => Promise<void>;
   validateSession: () => Promise<{ isValid: boolean; expiresAt?: string; user?: User }>;
+  // 2FA actions
+  verifyTwoFactor: (methodId: string, code: string) => Promise<TwoFactorVerifyResult>;
+  startTwoFactor: (methodId: string, method: string) => Promise<TwoFactorStartResult>;
 }
 
 /**
@@ -136,6 +148,7 @@ export function PubflowProvider({
 
             const apiClient = new ApiClient(fullConfig, storage);
             const authService = new AuthService(apiClient, storage, fullConfig);
+            const twoFactorService = new TwoFactorService(apiClient, fullConfig);
 
             // Get current user (non-blocking)
             let user = null;
@@ -145,12 +158,31 @@ export function PubflowProvider({
               config: fullConfig,
               apiClient,
               authService,
+              twoFactorService,
               user,
               isAuthenticated,
               isLoading: true,
+              twoFactorPending: false,
+              twoFactorMethods: [],
               login: async (credentials) => {
                 const result = await authService.login(credentials);
-                if (result.success && result.user && isMounted) {
+                if (!isMounted) return result;
+
+                if (result.success && result.requires2fa) {
+                  // 2FA required — keep session pending, expose methods
+                  setContextValue(prev => ({
+                    ...prev,
+                    instances: {
+                      ...prev.instances,
+                      [instanceConfig.id]: {
+                        ...prev.instances[instanceConfig.id],
+                        isLoading: false,
+                        twoFactorPending: true,
+                        twoFactorMethods: result.availableMethods ?? [],
+                      }
+                    }
+                  }));
+                } else if (result.success && result.user) {
                   setContextValue(prev => ({
                     ...prev,
                     instances: {
@@ -159,7 +191,9 @@ export function PubflowProvider({
                         ...prev.instances[instanceConfig.id],
                         user: result.user,
                         isAuthenticated: true,
-                        isLoading: false
+                        isLoading: false,
+                        twoFactorPending: false,
+                        twoFactorMethods: [],
                       }
                     }
                   }));
@@ -177,7 +211,9 @@ export function PubflowProvider({
                         ...prev.instances[instanceConfig.id],
                         user: null,
                         isAuthenticated: false,
-                        isLoading: false
+                        isLoading: false,
+                        twoFactorPending: false,
+                        twoFactorMethods: [],
                       }
                     }
                   }));
@@ -200,7 +236,31 @@ export function PubflowProvider({
                   }));
                 }
                 return result;
-              }
+              },
+              verifyTwoFactor: async (methodId: string, code: string) => {
+                const result = await twoFactorService.verify(methodId, code, 'login');
+                if (result.verified && isMounted) {
+                  // Fetch the now-active user from the server
+                  const userData = await authService.getCurrentUser();
+                  setContextValue(prev => ({
+                    ...prev,
+                    instances: {
+                      ...prev.instances,
+                      [instanceConfig.id]: {
+                        ...prev.instances[instanceConfig.id],
+                        user: userData,
+                        isAuthenticated: true,
+                        twoFactorPending: false,
+                        twoFactorMethods: [],
+                      }
+                    }
+                  }));
+                }
+                return result;
+              },
+              startTwoFactor: async (methodId: string, method: string) => {
+                return twoFactorService.start(methodId, method, 'login');
+              },
             };
 
             // Load user asynchronously
@@ -251,17 +311,36 @@ export function PubflowProvider({
 
           const apiClient = new ApiClient(fullConfig, storage);
           const authService = new AuthService(apiClient, storage, fullConfig);
+          const twoFactorService = new TwoFactorService(apiClient, fullConfig);
 
           instancesMap[defaultInstance] = {
             config: fullConfig,
             apiClient,
             authService,
+            twoFactorService,
             user: null,
             isAuthenticated: false,
             isLoading: true,
+            twoFactorPending: false,
+            twoFactorMethods: [],
             login: async (credentials) => {
               const result = await authService.login(credentials);
-              if (result.success && result.user && isMounted) {
+              if (!isMounted) return result;
+
+              if (result.success && result.requires2fa) {
+                setContextValue(prev => ({
+                  ...prev,
+                  instances: {
+                    ...prev.instances,
+                    [defaultInstance]: {
+                      ...prev.instances[defaultInstance],
+                      isLoading: false,
+                      twoFactorPending: true,
+                      twoFactorMethods: result.availableMethods ?? [],
+                    }
+                  }
+                }));
+              } else if (result.success && result.user) {
                 setContextValue(prev => ({
                   ...prev,
                   instances: {
@@ -270,7 +349,9 @@ export function PubflowProvider({
                       ...prev.instances[defaultInstance],
                       user: result.user,
                       isAuthenticated: true,
-                      isLoading: false
+                      isLoading: false,
+                      twoFactorPending: false,
+                      twoFactorMethods: [],
                     }
                   }
                 }));
@@ -288,7 +369,9 @@ export function PubflowProvider({
                       ...prev.instances[defaultInstance],
                       user: null,
                       isAuthenticated: false,
-                      isLoading: false
+                      isLoading: false,
+                      twoFactorPending: false,
+                      twoFactorMethods: [],
                     }
                   }
                 }));
@@ -311,7 +394,30 @@ export function PubflowProvider({
                 }));
               }
               return result;
-            }
+            },
+            verifyTwoFactor: async (methodId: string, code: string) => {
+              const result = await twoFactorService.verify(methodId, code, 'login');
+              if (result.verified && isMounted) {
+                const userData = await authService.getCurrentUser();
+                setContextValue(prev => ({
+                  ...prev,
+                  instances: {
+                    ...prev.instances,
+                    [defaultInstance]: {
+                      ...prev.instances[defaultInstance],
+                      user: userData,
+                      isAuthenticated: true,
+                      twoFactorPending: false,
+                      twoFactorMethods: [],
+                    }
+                  }
+                }));
+              }
+              return result;
+            },
+            startTwoFactor: async (methodId: string, method: string) => {
+              return twoFactorService.start(methodId, method, 'login');
+            },
           };
 
           // Load user asynchronously

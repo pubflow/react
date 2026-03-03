@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { processLogoUrl } from '../../utils/asset-utils';
+import type { TwoFactorMethod } from '@pubflow/core';
 
 /**
  * Login form configuration
@@ -16,37 +17,37 @@ export interface LoginFormConfig {
    * Primary color for branding
    */
   primaryColor?: string;
-  
+
   /**
    * Secondary color for accents
    */
   secondaryColor?: string;
-  
+
   /**
    * Application name
    */
   appName?: string;
-  
+
   /**
    * Logo URL or component
    */
   logo?: string | React.ReactNode;
-  
+
   /**
    * Show password reset link
    */
   showPasswordReset?: boolean;
-  
+
   /**
    * Show account creation link
    */
   showAccountCreation?: boolean;
-  
+
   /**
    * Custom styling
    */
   className?: string;
-  
+
   /**
    * Redirect path after successful login
    */
@@ -61,27 +62,27 @@ export interface LoginFormProps {
    * Configuration options
    */
   config?: LoginFormConfig;
-  
+
   /**
    * Success callback
    */
   onSuccess?: (user: any) => void;
-  
+
   /**
    * Error callback
    */
   onError?: (error: string) => void;
-  
+
   /**
    * Password reset callback
    */
   onPasswordReset?: () => void;
-  
+
   /**
    * Account creation callback
    */
   onAccountCreation?: () => void;
-  
+
   /**
    * Pubflow instance ID
    */
@@ -99,15 +100,23 @@ export function LoginForm({
   onAccountCreation,
   instanceId
 }: LoginFormProps) {
-  const { login, isLoading } = useAuth(instanceId);
-  
+  const { login, verifyTwoFactor, startTwoFactor, isLoading } = useAuth(instanceId);
+
   // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
-  
+
+  // 2FA state
+  const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
+  const [otpCode, setOtpCode] = useState('');
+  const [pendingMethods, setPendingMethods] = useState<TwoFactorMethod[]>([]);
+  const [activeMethodId, setActiveMethodId] = useState<string | null>(null);
+  const [activeMethodName, setActiveMethodName] = useState<string>('email');
+  const [otpLoading, setOtpLoading] = useState(false);
+
   // Configuration with defaults
   const {
     primaryColor = process.env.REACT_APP_PRIMARY_COLOR || '#006aff',
@@ -119,12 +128,12 @@ export function LoginForm({
     className = '',
     redirectPath
   } = config;
-  
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    
+
     // Basic validation
     if (!email.trim()) {
       setError('Email is required');
@@ -134,15 +143,27 @@ export function LoginForm({
       setError('Password is required');
       return;
     }
-    
+
     try {
       const result = await login({ email: email.toLowerCase().trim(), password });
-      
+
+      if (result.requires2fa) {
+        // Switch to OTP step
+        const methods: TwoFactorMethod[] = result.availableMethods ?? [];
+        setPendingMethods(methods);
+        if (methods.length > 0) {
+          setActiveMethodId(methods[0].id);
+          setActiveMethodName(methods[0].method);
+        }
+        setStep('otp');
+        return;
+      }
+
       if (result.success) {
         if (onSuccess) {
           onSuccess(result.user);
         }
-        
+
         // Handle redirect
         if (redirectPath && typeof window !== 'undefined') {
           window.location.href = redirectPath;
@@ -162,7 +183,49 @@ export function LoginForm({
       }
     }
   };
-  
+
+  // Handle OTP verification
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeMethodId) return;
+    setError('');
+    setOtpLoading(true);
+    try {
+      const result = await verifyTwoFactor(activeMethodId, otpCode.trim());
+      if (result.verified) {
+        if (onSuccess) onSuccess(null);
+        if (redirectPath && typeof window !== 'undefined') {
+          window.location.href = redirectPath;
+        }
+      } else {
+        const msg = result.error ||
+          (result.attempts_remaining !== undefined
+            ? `Incorrect code. ${result.attempts_remaining} attempt(s) remaining.`
+            : 'Incorrect code.');
+        setError(msg);
+        if (onError) onError(msg);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Verification failed';
+      setError(msg);
+      if (onError) onError(msg);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  // Handle resend code
+  const handleResend = async () => {
+    if (!activeMethodId) return;
+    setError('');
+    setOtpLoading(true);
+    try {
+      await startTwoFactor(activeMethodId, activeMethodName);
+    } catch { /* ignore */ } finally {
+      setOtpLoading(false);
+    }
+  };
+
   // Dynamic styles
   const styles = {
     container: {
@@ -178,6 +241,7 @@ export function LoginForm({
     },
     logoSection: {
       display: 'flex',
+      flexDirection: 'column' as const,
       justifyContent: 'center',
       alignItems: 'center',
       textAlign: 'center' as const,
@@ -300,7 +364,7 @@ export function LoginForm({
       textAlign: 'center' as const
     }
   };
-  
+
   return (
     <div className={className} style={styles.container}>
       {/* Logo Section */}
@@ -313,117 +377,175 @@ export function LoginForm({
           )
         )}
         <h1 style={styles.welcomeText}>Welcome to {appName}</h1>
-        <p style={styles.subtitleText}>Sign in to your account</p>
+        <p style={styles.subtitleText}>
+          {step === 'otp' ? 'Enter the verification code we sent you.' : 'Sign in to your account'}
+        </p>
       </div>
-      
-      {/* Login Form */}
-      <form onSubmit={handleSubmit}>
-        {error && (
-          <div style={styles.errorContainer}>
-            <span style={{ color: '#ff4757', fontSize: '20px' }}>⚠</span>
-            <span style={styles.errorText}>{error}</span>
-          </div>
-        )}
-        
-        <div style={styles.inputGroup}>
-          <label style={styles.inputLabel}>Email Address</label>
-          <div style={styles.inputContainer}>
-            <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>✉</span>
-            <input
-              type="email"
-              style={styles.input}
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoCapitalize="none"
-              autoComplete="email"
-              disabled={isLoading}
-              required
-            />
-          </div>
+
+      {/* Error */}
+      {error && (
+        <div style={styles.errorContainer}>
+          <span style={{ color: '#ff4757', fontSize: '20px' }}>⚠</span>
+          <span style={styles.errorText}>{error}</span>
         </div>
-        
-        <div style={styles.inputGroup}>
-          <label style={styles.inputLabel}>Password</label>
-          <div style={styles.inputContainer}>
-            <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>🔒</span>
-            <input
-              type={showPassword ? 'text' : 'password'}
-              style={styles.input}
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              disabled={isLoading}
-              required
-            />
-            <button
-              type="button"
-              style={styles.eyeButton}
-              onClick={() => setShowPassword(!showPassword)}
-              disabled={isLoading}
-            >
-              {showPassword ? '👁' : '👁‍🗨'}
-            </button>
+      )}
+
+      {/* ── OTP Step ── */}
+      {step === 'otp' ? (
+        <form onSubmit={handleOtpSubmit}>
+          <div style={styles.inputGroup}>
+            <label style={styles.inputLabel}>Verification Code</label>
+            <div style={styles.inputContainer}>
+              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>🔐</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                style={{ ...styles.input, letterSpacing: '0.4em', textAlign: 'center' }}
+                placeholder="000000"
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                autoFocus
+                autoComplete="one-time-code"
+                disabled={otpLoading}
+                required
+              />
+            </div>
           </div>
-        </div>
-        
-        <div style={styles.checkboxContainer}>
-          <label style={{ display: 'flex', alignItems: 'center', fontSize: '14px', color: '#666' }}>
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              style={{ marginRight: '8px' }}
-            />
-            Remember me
-          </label>
-          {showPasswordReset && (
+
+          <button
+            type="submit"
+            style={{
+              ...styles.loginButton,
+              opacity: otpLoading || otpCode.length < 6 ? 0.7 : 1,
+              cursor: otpLoading || otpCode.length < 6 ? 'not-allowed' : 'pointer',
+            }}
+            disabled={otpLoading || otpCode.length < 6}
+          >
+            {otpLoading ? '⟳ Verifying…' : 'Verify Code'}
+          </button>
+
+          <div style={{ textAlign: 'center', marginTop: '16px' }}>
             <button
               type="button"
               style={{ ...styles.linkButton, fontSize: '14px' }}
-              onClick={onPasswordReset}
-              disabled={isLoading}
+              onClick={handleResend}
+              disabled={otpLoading}
             >
-              Forgot password?
+              Didn't receive a code? Resend
             </button>
-          )}
-        </div>
-        
-        <button
-          type="submit"
-          style={{
-            ...styles.loginButton,
-            opacity: isLoading ? 0.8 : 1,
-            cursor: isLoading ? 'not-allowed' : 'pointer'
-          }}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <>
-              <span style={{ animation: 'spin 1s linear infinite' }}>⟳</span>
-              Signing in...
-            </>
-          ) : (
-            'Sign In'
-          )}
-        </button>
-      </form>
-      
-      {/* Account Actions */}
-      {showAccountCreation && (
-        <div style={styles.accountActions}>
+            <button
+              type="button"
+              style={{ ...styles.linkButton, fontSize: '13px', color: '#888' }}
+              onClick={() => { setStep('credentials'); setError(''); setOtpCode(''); }}
+            >
+              ← Back to login
+            </button>
+          </div>
+        </form>
+      ) : (
+        /* ── Credentials Step ── */
+        <form onSubmit={handleSubmit}>
+          <div style={styles.inputGroup}>
+            <label style={styles.inputLabel}>Email Address</label>
+            <div style={styles.inputContainer}>
+              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>✉</span>
+              <input
+                type="email"
+                style={styles.input}
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoCapitalize="none"
+                autoComplete="email"
+                disabled={isLoading}
+                required
+              />
+            </div>
+          </div>
+
+          <div style={styles.inputGroup}>
+            <label style={styles.inputLabel}>Password</label>
+            <div style={styles.inputContainer}>
+              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>🔒</span>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                style={styles.input}
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                disabled={isLoading}
+                required
+              />
+              <button
+                type="button"
+                style={styles.eyeButton}
+                onClick={() => setShowPassword(!showPassword)}
+                disabled={isLoading}
+              >
+                {showPassword ? '👁' : '👁‍🗨'}
+              </button>
+            </div>
+          </div>
+
+          <div style={styles.checkboxContainer}>
+            <label style={{ display: 'flex', alignItems: 'center', fontSize: '14px', color: '#666' }}>
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              Remember me
+            </label>
+            {showPasswordReset && (
+              <button
+                type="button"
+                style={{ ...styles.linkButton, fontSize: '14px' }}
+                onClick={onPasswordReset}
+                disabled={isLoading}
+              >
+                Forgot password?
+              </button>
+            )}
+          </div>
+
           <button
-            type="button"
-            style={styles.linkButton}
-            onClick={onAccountCreation}
+            type="submit"
+            style={{
+              ...styles.loginButton,
+              opacity: isLoading ? 0.8 : 1,
+              cursor: isLoading ? 'not-allowed' : 'pointer'
+            }}
             disabled={isLoading}
           >
-            Create New Account
+            {isLoading ? (
+              <>
+                <span style={{ animation: 'spin 1s linear infinite' }}>⟳</span>
+                Signing in...
+              </>
+            ) : (
+              'Sign In'
+            )}
           </button>
-        </div>
+
+          {showAccountCreation && (
+            <div style={styles.accountActions}>
+              <button
+                type="button"
+                style={styles.linkButton}
+                onClick={onAccountCreation}
+                disabled={isLoading}
+              >
+                Create New Account
+              </button>
+            </div>
+          )}
+        </form>
       )}
-      
+
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
