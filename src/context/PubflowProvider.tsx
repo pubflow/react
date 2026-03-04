@@ -16,8 +16,8 @@ import {
   TwoFactorService,
   User,
   type TwoFactorMethod,
-  type TwoFactorVerifyResult,
   type TwoFactorStartResult,
+  type TwoFactorVerifyResult,
 } from '@pubflow/core';
 import { BrowserStorageAdapter } from '../storage/BrowserStorageAdapter';
 
@@ -38,19 +38,16 @@ export interface PubflowInstance {
   apiClient: ApiClient;
   authService: AuthService;
   twoFactorService: TwoFactorService;
-  user: User | null | undefined;  // Allow undefined to fix type issues
+  user: User | null | undefined;
   isAuthenticated: boolean;
   isLoading: boolean;
-  // 2FA pending state
   twoFactorPending: boolean;
   twoFactorMethods: TwoFactorMethod[];
-  // Auth actions
   login: (credentials: { email?: string; userName?: string; password: string }) => Promise<any>;
   logout: () => Promise<void>;
   validateSession: () => Promise<{ isValid: boolean; expiresAt?: string; user?: User }>;
-  // 2FA actions
-  verifyTwoFactor: (methodId: string, code: string) => Promise<TwoFactorVerifyResult>;
   startTwoFactor: (methodId: string, method: string) => Promise<TwoFactorStartResult>;
+  verifyTwoFactor: (methodId: string, code: string) => Promise<TwoFactorVerifyResult>;
 }
 
 /**
@@ -148,7 +145,10 @@ export function PubflowProvider({
 
             const apiClient = new ApiClient(fullConfig, storage);
             const authService = new AuthService(apiClient, storage, fullConfig);
-            const twoFactorService = new TwoFactorService(apiClient, fullConfig);
+            const twoFactorService = new TwoFactorService(
+              apiClient,
+              `${fullConfig.authBasePath || '/auth'}/two_factor`
+            );
 
             // Get current user (non-blocking)
             let user = null;
@@ -166,23 +166,7 @@ export function PubflowProvider({
               twoFactorMethods: [],
               login: async (credentials) => {
                 const result = await authService.login(credentials);
-                if (!isMounted) return result;
-
-                if (result.success && result.requires2fa) {
-                  // 2FA required — keep session pending, expose methods
-                  setContextValue(prev => ({
-                    ...prev,
-                    instances: {
-                      ...prev.instances,
-                      [instanceConfig.id]: {
-                        ...prev.instances[instanceConfig.id],
-                        isLoading: false,
-                        twoFactorPending: true,
-                        twoFactorMethods: result.availableMethods ?? [],
-                      }
-                    }
-                  }));
-                } else if (result.success && result.user) {
+                if (result.success && result.user && isMounted) {
                   setContextValue(prev => ({
                     ...prev,
                     instances: {
@@ -191,9 +175,20 @@ export function PubflowProvider({
                         ...prev.instances[instanceConfig.id],
                         user: result.user,
                         isAuthenticated: true,
-                        isLoading: false,
-                        twoFactorPending: false,
-                        twoFactorMethods: [],
+                        isLoading: false
+                      }
+                    }
+                  }));
+                } else if (result.requires2fa && isMounted) {
+                  setContextValue(prev => ({
+                    ...prev,
+                    instances: {
+                      ...prev.instances,
+                      [instanceConfig.id]: {
+                        ...prev.instances[instanceConfig.id],
+                        twoFactorPending: true,
+                        twoFactorMethods: result.availableMethods ?? [],
+                        isLoading: false
                       }
                     }
                   }));
@@ -213,7 +208,7 @@ export function PubflowProvider({
                         isAuthenticated: false,
                         isLoading: false,
                         twoFactorPending: false,
-                        twoFactorMethods: [],
+                        twoFactorMethods: []
                       }
                     }
                   }));
@@ -237,10 +232,12 @@ export function PubflowProvider({
                 }
                 return result;
               },
+              startTwoFactor: async (methodId: string, method: string) => {
+                return twoFactorService.start(methodId, method, 'login');
+              },
               verifyTwoFactor: async (methodId: string, code: string) => {
                 const result = await twoFactorService.verify(methodId, code, 'login');
                 if (result.verified && isMounted) {
-                  // Fetch the now-active user from the server
                   const userData = await authService.getCurrentUser();
                   setContextValue(prev => ({
                     ...prev,
@@ -250,16 +247,14 @@ export function PubflowProvider({
                         ...prev.instances[instanceConfig.id],
                         user: userData,
                         isAuthenticated: true,
+                        isLoading: false,
                         twoFactorPending: false,
-                        twoFactorMethods: [],
+                        twoFactorMethods: []
                       }
                     }
                   }));
                 }
                 return result;
-              },
-              startTwoFactor: async (methodId: string, method: string) => {
-                return twoFactorService.start(methodId, method, 'login');
               },
             };
 
@@ -311,7 +306,10 @@ export function PubflowProvider({
 
           const apiClient = new ApiClient(fullConfig, storage);
           const authService = new AuthService(apiClient, storage, fullConfig);
-          const twoFactorService = new TwoFactorService(apiClient, fullConfig);
+          const twoFactorService = new TwoFactorService(
+            apiClient,
+            `${fullConfig.authBasePath || '/auth'}/two_factor`
+          );
 
           instancesMap[defaultInstance] = {
             config: fullConfig,
@@ -325,22 +323,7 @@ export function PubflowProvider({
             twoFactorMethods: [],
             login: async (credentials) => {
               const result = await authService.login(credentials);
-              if (!isMounted) return result;
-
-              if (result.success && result.requires2fa) {
-                setContextValue(prev => ({
-                  ...prev,
-                  instances: {
-                    ...prev.instances,
-                    [defaultInstance]: {
-                      ...prev.instances[defaultInstance],
-                      isLoading: false,
-                      twoFactorPending: true,
-                      twoFactorMethods: result.availableMethods ?? [],
-                    }
-                  }
-                }));
-              } else if (result.success && result.user) {
+              if (result.success && result.user && isMounted) {
                 setContextValue(prev => ({
                   ...prev,
                   instances: {
@@ -349,9 +332,20 @@ export function PubflowProvider({
                       ...prev.instances[defaultInstance],
                       user: result.user,
                       isAuthenticated: true,
-                      isLoading: false,
-                      twoFactorPending: false,
-                      twoFactorMethods: [],
+                      isLoading: false
+                    }
+                  }
+                }));
+              } else if (result.requires2fa && isMounted) {
+                setContextValue(prev => ({
+                  ...prev,
+                  instances: {
+                    ...prev.instances,
+                    [defaultInstance]: {
+                      ...prev.instances[defaultInstance],
+                      twoFactorPending: true,
+                      twoFactorMethods: result.availableMethods ?? [],
+                      isLoading: false
                     }
                   }
                 }));
@@ -371,7 +365,7 @@ export function PubflowProvider({
                       isAuthenticated: false,
                       isLoading: false,
                       twoFactorPending: false,
-                      twoFactorMethods: [],
+                      twoFactorMethods: []
                     }
                   }
                 }));
@@ -395,6 +389,9 @@ export function PubflowProvider({
               }
               return result;
             },
+            startTwoFactor: async (methodId: string, method: string) => {
+              return twoFactorService.start(methodId, method, 'login');
+            },
             verifyTwoFactor: async (methodId: string, code: string) => {
               const result = await twoFactorService.verify(methodId, code, 'login');
               if (result.verified && isMounted) {
@@ -407,16 +404,14 @@ export function PubflowProvider({
                       ...prev.instances[defaultInstance],
                       user: userData,
                       isAuthenticated: true,
+                      isLoading: false,
                       twoFactorPending: false,
-                      twoFactorMethods: [],
+                      twoFactorMethods: []
                     }
                   }
                 }));
               }
               return result;
-            },
-            startTwoFactor: async (methodId: string, method: string) => {
-              return twoFactorService.start(methodId, method, 'login');
             },
           };
 
