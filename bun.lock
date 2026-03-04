@@ -6,7 +6,7 @@
       "name": "@pubflow/react",
       "dependencies": {
         "@hookform/resolvers": "^3.3.2",
-        "@pubflow/core": "^0.4.2",
+        "@pubflow/core": "^0.4.4",
         "react-hook-form": "^7.48.2",
         "swr": "^2.2.4",
       },
@@ -185,7 +185,7 @@
 
     "@polka/url": ["@polka/url@1.0.0-next.29", "", {}, "sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww=="],
 
-    "@pubflow/core": ["@pubflow/core@0.4.2", "", { "dependencies": { "zod": "^3.22.4" } }, "sha512-aNEy7BwXcmBr2IlHpHLS8TY4dpHgSYBklt0TK09z5EUQufyxf6P9irAMBwNPI/EEC0ikJiAFvXM914eCgw+y0A=="],
+    "@pubflow/core": ["@pubflow/core@0.4.4", "", { "dependencies": { "zod": "^3.22.4" } }, "sha512-Njnfi7muk+Fn5aKLb0Jt+ILyf592jbhc4mJ4z1zhvA+90tMYhlJ4xFZP2yYqLcY1oSie+zeDwyW9uOsS7nEFHg=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-beta.27", "", {}, "sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA=="],
 

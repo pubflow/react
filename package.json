@@ -1,6 +1,6 @@
 {
   "name": "@pubflow/react",
-  "version": "0.4.8",
+  "version": "0.4.10",
   "description": "React adapter for Pubflow framework with support for TanStack Router and SWR - Now with snake_case support",
   "main": "dist/index.cjs",
   "module": "dist/index.esm.js",
@@ -33,7 +33,7 @@
   "author": "Pubflow, Inc.",
   "license": "AGPL-3.0-or-later",
   "dependencies": {
-    "@pubflow/core": "^0.4.2",
+    "@pubflow/core": "^0.4.4",
     "@hookform/resolvers": "^3.3.2",
     "react-hook-form": "^7.48.2",
     "swr": "^2.2.4"
