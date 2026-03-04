@@ -140,6 +140,8 @@ function LoginPage() {
 }
 ```
 
+> **Note on Login Resends:** For the login flow, `startTwoFactor` is exported directly from `useAuth()`. For managing settings inside an active session, use `useTwoFactor().sendCode()` instead.
+
 ---
 
 ## Flow 2 — Manage 2FA settings (`useTwoFactor`)
@@ -183,10 +185,21 @@ const {
   // Toggle on/off
   toggle,              // (enabled, code?, methodId?) → TwoFactorToggleResult
 
+  // Re-auth / Sensitive actions (new in 0.4.14)
+  // Send a code to an active method before disabling or removing
+  sendCode,            // (methodId, method, action?) → TwoFactorStartResult
+
   // Remove a method (requires code from another active method)
   removeMethod,        // (methodId, code, verifyMethodId) → { success }
 } = useTwoFactor()
 ```
+
+### Flow for Sensitive Actions (Disable / Remove)
+
+When users want to disable 2FA entirely or remove a specific method, you must verify their identity using an existing active 2FA method:
+1. **Send code:** Call `sendCode(methodId, method, 'sensitive_action')` to dispatch an OTP.
+2. **Accept input:** Show the 6-digit input specifically for the disable or remove flow.
+3. **Submit:** Pass the entered code into `toggle(false, code, methodId)` or `removeMethod(removedId, code, verifyMethodId)`.
 
 ### Minimal example
 
@@ -229,7 +242,13 @@ function TwoFactorSettings() {
       {methods.map(m => (
         <div key={m.id}>
           {m.method} — {m.identifier}
-          <button onClick={() => removeMethod(m.id, code, otherMethodId)}>Remove</button>
+          <button onClick={async () => {
+             // 1. Send code to verify removal
+             await sendCode(m.id, m.method)
+             // 2. Prompt user for it (simplified here)
+             const code = prompt('Enter the code we just sent you:')
+             if (code) await removeMethod(m.id, code, m.id)
+          }}>Remove</button>
         </div>
       ))}
 
@@ -244,7 +263,14 @@ function TwoFactorSettings() {
       )}
 
       {/* Toggle */}
-      <button onClick={() => toggle(false, code, methods[0]?.id)}>Disable 2FA</button>
+      <button onClick={async () => {
+         const method = methods[0]
+         if (method) {
+             await sendCode(method.id, method.method)
+             const code = prompt('Enter code to disable 2FA:')
+             if (code) await toggle(false, code, method.id)
+         }
+      }}>Disable 2FA</button>
     </div>
   )
 }
@@ -279,6 +305,16 @@ interface TwoFactorSetupResult {
   status?: string          // 'pending_setup'
   verification_sent?: boolean
   expires_in?: number      // seconds
+  error?: string
+}
+
+// sendCode() / start() result — sensitive actions
+interface TwoFactorStartResult {
+  success: boolean
+  method?: string
+  verification_sent?: boolean
+  expires_in?: number
+  message?: string
   error?: string
 }
 

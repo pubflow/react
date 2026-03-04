@@ -15,6 +15,7 @@ import type {
     TwoFactorSetupResult,
     TwoFactorToggleResult,
     TwoFactorVerifyResult,
+    TwoFactorStartResult,
 } from '@pubflow/core';
 
 export interface UseTwoFactorResult {
@@ -54,6 +55,15 @@ export interface UseTwoFactorResult {
         verificationCode: string,
         verificationMethodId: string,
     ) => Promise<{ success: boolean; message?: string; error?: string }>;
+    /**
+     * Send a verification code to an existing active method (re-auth / sensitive action).
+     * Call this BEFORE showing the code input for disable or remove flows.
+     */
+    sendCode: (
+        methodId: string,
+        method: string,
+        action?: string,
+    ) => Promise<TwoFactorStartResult>;
 }
 
 
@@ -193,6 +203,22 @@ export function useTwoFactor(instanceId?: string): UseTwoFactorResult {
         [instance, refresh],
     );
 
+    const sendCode = useCallback(
+        async (
+            methodId: string,
+            method: string,
+            action: string = 'sensitive_action',
+        ): Promise<TwoFactorStartResult> => {
+            if (!instance) return { success: false, error: 'Pubflow not initialized' };
+            try {
+                return await instance.twoFactorService.start(methodId, method, action);
+            } catch (e: any) {
+                return { success: false, error: e?.message || 'Failed to send code' };
+            }
+        },
+        [instance],
+    );
+
     return {
         systemEnabled,
         availableMethods,
@@ -204,5 +230,6 @@ export function useTwoFactor(instanceId?: string): UseTwoFactorResult {
         confirmSetup,
         toggle,
         removeMethod,
+        sendCode,
     };
 }
