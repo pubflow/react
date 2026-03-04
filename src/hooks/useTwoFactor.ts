@@ -14,6 +14,7 @@ import type {
     TwoFactorSystemInfo,
     TwoFactorSetupResult,
     TwoFactorToggleResult,
+    TwoFactorVerifyResult,
 } from '@pubflow/core';
 
 export interface UseTwoFactorResult {
@@ -21,18 +22,21 @@ export interface UseTwoFactorResult {
     systemEnabled: boolean;
     /** Available methods on the server (e.g. ['email']) */
     availableMethods: string[];
-    /** User's configured 2FA methods */
+    /** User's configured 2FA methods (status = active only) */
     methods: TwoFactorMethod[];
     isLoading: boolean;
     error: string | null;
     /** Load system info and user methods */
     refresh: () => Promise<void>;
     /**
-     * Set up a new 2FA method.
-     * @param method  e.g. 'email'
-     * @param identifier  email address or phone number
+     * Step 1 of setup: register method + send verification code.
+     * Returns { success, method_id, status: 'pending_setup', ... }
      */
     setup: (method: string, identifier: string) => Promise<TwoFactorSetupResult>;
+    /**
+     * Step 2 of setup: confirm the code received → activates the method.
+     */
+    confirmSetup: (methodId: string, method: string, code: string) => Promise<TwoFactorVerifyResult>;
     /**
      * Enable or disable 2FA for the user.
      * When disabling with existing methods a verification code is required.
@@ -51,6 +55,7 @@ export interface UseTwoFactorResult {
         verificationMethodId: string,
     ) => Promise<{ success: boolean; message?: string; error?: string }>;
 }
+
 
 /**
  * Hook for managing 2FA settings.
@@ -167,6 +172,27 @@ export function useTwoFactor(instanceId?: string): UseTwoFactorResult {
         [instance, refresh],
     );
 
+    const confirmSetup = useCallback(
+        async (methodId: string, method: string, code: string): Promise<TwoFactorVerifyResult> => {
+            if (!instance) return { success: false, verified: false, error: 'Pubflow not initialized' };
+            setIsLoading(true);
+            setError(null);
+            try {
+                // action='setup' activates a pending_setup method in the DB
+                const result = await instance.twoFactorService.verify(methodId, code, 'setup');
+                if (result.verified) await refresh();
+                return result;
+            } catch (e: any) {
+                const msg = e?.message || 'Confirmation failed';
+                setError(msg);
+                return { success: false, verified: false, error: msg };
+            } finally {
+                setIsLoading(false);
+            }
+        },
+        [instance, refresh],
+    );
+
     return {
         systemEnabled,
         availableMethods,
@@ -175,6 +201,7 @@ export function useTwoFactor(instanceId?: string): UseTwoFactorResult {
         error,
         refresh,
         setup,
+        confirmSetup,
         toggle,
         removeMethod,
     };
