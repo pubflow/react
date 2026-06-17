@@ -7,6 +7,8 @@ React adapter for the Pubflow framework with support for any React-based framewo
 - **Flowless (Authentication Backend)**: [https://flowless.dev/](https://flowless.dev/)
 - **Flowfull Client Libraries**: [https://clients.flowfull.dev/](https://clients.flowfull.dev/)
 - **Bridge Payments**: [https://bridgepayments.dev/](https://bridgepayments.dev/)
+- **Complete Route Coverage**: [./docs/complete-route-coverage.md](./docs/complete-route-coverage.md)
+- **Multi-Backend Modules**: [./docs/multi-backend-modules.md](./docs/multi-backend-modules.md)
 
 ## Features
 

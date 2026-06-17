@@ -27,6 +27,7 @@ Welcome to the Pubflow React documentation. This documentation provides comprehe
 - [Schema Validation](./schema-validation.md)
 - [CRUD Operations](./crud-reference.md)
 - [Components](./components-reference.md)
+- [Multi-backend Modules](./multi-backend-modules.md)
 
 ## Framework Integration
 
