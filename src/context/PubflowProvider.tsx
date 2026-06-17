@@ -28,6 +28,7 @@ export interface PubflowContextValue {
   instances: Record<string, PubflowInstance>;
   defaultInstance: string;
   isReady: boolean;
+  theme?: PubflowProviderProps['theme'];
 }
 
 /**
@@ -56,7 +57,8 @@ export interface PubflowInstance {
 export const PubflowContext = createContext<PubflowContextValue>({
   instances: {},
   defaultInstance: 'default',
-  isReady: false
+  isReady: false,
+  theme: {}
 });
 
 /**
@@ -101,7 +103,8 @@ export function PubflowProvider({
   const [contextValue, setContextValue] = useState<PubflowContextValue>({
     instances: {},
     defaultInstance,
-    isReady: false
+    isReady: false,
+    theme
   });
 
   // Session handlers
@@ -237,7 +240,7 @@ export function PubflowProvider({
               },
               verifyTwoFactor: async (methodId: string, code: string) => {
                 const result = await twoFactorService.verify(methodId, code, 'login');
-                if (result.verified && isMounted) {
+                if ((result.verified || result.session_activated) && isMounted) {
                   const userData = await authService.getCurrentUser();
                   setContextValue(prev => ({
                     ...prev,
@@ -394,7 +397,7 @@ export function PubflowProvider({
             },
             verifyTwoFactor: async (methodId: string, code: string) => {
               const result = await twoFactorService.verify(methodId, code, 'login');
-              if (result.verified && isMounted) {
+              if ((result.verified || result.session_activated) && isMounted) {
                 const userData = await authService.getCurrentUser();
                 setContextValue(prev => ({
                   ...prev,
@@ -452,11 +455,12 @@ export function PubflowProvider({
           setContextValue({
             instances: instancesMap,
             defaultInstance,
-            isReady: true
+            isReady: true,
+            theme
           });
         } else if (isMounted) {
           // Even if no instances configured correctly, mark ready so useAuth can react
-          setContextValue(prev => ({ ...prev, isReady: true }));
+          setContextValue(prev => ({ ...prev, isReady: true, theme }));
         }
       } catch (error) {
         console.error('Error initializing Pubflow:', error);

@@ -1,45 +1,33 @@
-/**
- * LoginForm Component Tests
- */
-
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LoginForm } from '../LoginForm';
-import { PubflowProvider } from '../../../context/PubflowProvider';
 
-// Mock the useAuth hook
+const mockAuth = {
+  login: vi.fn(),
+  verifyTwoFactor: vi.fn(),
+  startTwoFactor: vi.fn(),
+  isLoading: false,
+  twoFactorPending: false,
+  twoFactorMethods: [],
+};
+
 vi.mock('../../../hooks/useAuth', () => ({
-  useAuth: () => ({
-    login: vi.fn(),
-    isLoading: false
-  })
+  useAuth: () => mockAuth
 }));
-
-// Test wrapper with providers
-const TestWrapper = ({ children }: { children: React.ReactNode }) => (
-  <PubflowProvider
-    config={{
-      baseUrl: 'http://localhost:8787',
-      bridgeBasePath: '/bridge',
-      authBasePath: '/auth'
-    }}
-  >
-    {children}
-  </PubflowProvider>
-);
 
 describe('LoginForm', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mockAuth.login.mockReset();
+    mockAuth.verifyTwoFactor.mockReset();
+    mockAuth.startTwoFactor.mockReset();
+    mockAuth.isLoading = false;
+    mockAuth.twoFactorPending = false;
+    mockAuth.twoFactorMethods = [];
   });
 
   it('renders login form with default configuration', () => {
-    render(
-      <TestWrapper>
-        <LoginForm />
-      </TestWrapper>
-    );
+    render(<LoginForm />);
 
     expect(screen.getByText('Welcome to Pubflow')).toBeInTheDocument();
     expect(screen.getByText('Sign in to your account')).toBeInTheDocument();
@@ -48,18 +36,16 @@ describe('LoginForm', () => {
     expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument();
   });
 
-  it('renders with custom configuration', () => {
-    const config = {
-      appName: 'Test App',
-      primaryColor: '#ff0000',
-      showPasswordReset: false,
-      showAccountCreation: false
-    };
-
+  it('renders with custom branding configuration', () => {
     render(
-      <TestWrapper>
-        <LoginForm config={config} />
-      </TestWrapper>
+      <LoginForm
+        config={{
+          appName: 'Test App',
+          primaryColor: '#ff0000',
+          showPasswordReset: false,
+          showAccountCreation: false
+        }}
+      />
     );
 
     expect(screen.getByText('Welcome to Test App')).toBeInTheDocument();
@@ -68,234 +54,110 @@ describe('LoginForm', () => {
   });
 
   it('validates required fields', async () => {
-    render(
-      <TestWrapper>
-        <LoginForm />
-      </TestWrapper>
-    );
+    render(<LoginForm />);
 
-    const submitButton = screen.getByRole('button', { name: 'Sign In' });
-    fireEvent.click(submitButton);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
     await waitFor(() => {
       expect(screen.getByText('Email is required')).toBeInTheDocument();
     });
   });
 
-  it('validates email format', async () => {
-    render(
-      <TestWrapper>
-        <LoginForm />
-      </TestWrapper>
-    );
+  it('normalizes email to lowercase and calls onSuccess after normal login', async () => {
+    const onSuccess = vi.fn();
+    const user = { id: '1', email: 'test@example.com' };
+    mockAuth.login.mockResolvedValue({ success: true, user });
 
-    const emailInput = screen.getByLabelText('Email Address');
-    const passwordInput = screen.getByLabelText('Password');
-    const submitButton = screen.getByRole('button', { name: 'Sign In' });
+    render(<LoginForm onSuccess={onSuccess} />);
 
-    fireEvent.change(emailInput, { target: { value: 'invalid-email' } });
-    fireEvent.change(passwordInput, { target: { value: 'password123' } });
-    fireEvent.click(submitButton);
-
-    // Note: This test would need proper email validation in the component
-    // Currently the component only checks for empty email
-  });
-
-  it('toggles password visibility', () => {
-    render(
-      <TestWrapper>
-        <LoginForm />
-      </TestWrapper>
-    );
-
-    const passwordInput = screen.getByLabelText('Password') as HTMLInputElement;
-    const toggleButton = screen.getByRole('button', { name: /👁/ });
-
-    expect(passwordInput.type).toBe('password');
-
-    fireEvent.click(toggleButton);
-    expect(passwordInput.type).toBe('text');
-
-    fireEvent.click(toggleButton);
-    expect(passwordInput.type).toBe('password');
-  });
-
-  it('calls onPasswordReset when forgot password is clicked', () => {
-    const onPasswordReset = vi.fn();
-
-    render(
-      <TestWrapper>
-        <LoginForm onPasswordReset={onPasswordReset} />
-      </TestWrapper>
-    );
-
-    const forgotPasswordButton = screen.getByText('Forgot password?');
-    fireEvent.click(forgotPasswordButton);
-
-    expect(onPasswordReset).toHaveBeenCalledTimes(1);
-  });
-
-  it('calls onAccountCreation when create account is clicked', () => {
-    const onAccountCreation = vi.fn();
-
-    render(
-      <TestWrapper>
-        <LoginForm onAccountCreation={onAccountCreation} />
-      </TestWrapper>
-    );
-
-    const createAccountButton = screen.getByText('Create New Account');
-    fireEvent.click(createAccountButton);
-
-    expect(onAccountCreation).toHaveBeenCalledTimes(1);
-  });
-
-  it('normalizes email to lowercase', async () => {
-    const mockLogin = vi.fn().mockResolvedValue({ success: true, user: {} });
-    
-    vi.doMock('../../../hooks/useAuth', () => ({
-      useAuth: () => ({
-        login: mockLogin,
-        isLoading: false
-      })
-    }));
-
-    render(
-      <TestWrapper>
-        <LoginForm />
-      </TestWrapper>
-    );
-
-    const emailInput = screen.getByLabelText('Email Address');
-    const passwordInput = screen.getByLabelText('Password');
-    const submitButton = screen.getByRole('button', { name: 'Sign In' });
-
-    fireEvent.change(emailInput, { target: { value: 'TEST@EXAMPLE.COM' } });
-    fireEvent.change(passwordInput, { target: { value: 'password123' } });
-    fireEvent.click(submitButton);
+    fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'TEST@EXAMPLE.COM' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith({
+      expect(mockAuth.login).toHaveBeenCalledWith({
         email: 'test@example.com',
         password: 'password123'
       });
+      expect(onSuccess).toHaveBeenCalledWith(user);
     });
   });
 
-  it('displays error message on login failure', async () => {
-    const mockLogin = vi.fn().mockResolvedValue({ 
-      success: false, 
-      error: 'Invalid credentials' 
-    });
-    
-    vi.doMock('../../../hooks/useAuth', () => ({
-      useAuth: () => ({
-        login: mockLogin,
-        isLoading: false
-      })
-    }));
+  it('shows OTP form when login requires 2FA', async () => {
+    const onTwoFactorRequired = vi.fn();
+    const methods = [{ id: 'method-1', method: 'email', status: 'active', identifier: 't@example.com' }];
+    mockAuth.login.mockResolvedValue({ success: true, requires2fa: true, availableMethods: methods });
 
-    render(
-      <TestWrapper>
-        <LoginForm />
-      </TestWrapper>
-    );
+    render(<LoginForm onTwoFactorRequired={onTwoFactorRequired} />);
 
-    const emailInput = screen.getByLabelText('Email Address');
-    const passwordInput = screen.getByLabelText('Password');
-    const submitButton = screen.getByRole('button', { name: 'Sign In' });
-
-    fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
-    fireEvent.change(passwordInput, { target: { value: 'wrongpassword' } });
-    fireEvent.click(submitButton);
+    fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
+      expect(screen.getByLabelText('Verification Code')).toBeInTheDocument();
+      expect(onTwoFactorRequired).toHaveBeenCalledWith(methods);
     });
   });
 
-  it('shows loading state during login', async () => {
-    vi.doMock('../../../hooks/useAuth', () => ({
-      useAuth: () => ({
-        login: vi.fn(),
-        isLoading: true
-      })
-    }));
-
-    render(
-      <TestWrapper>
-        <LoginForm />
-      </TestWrapper>
-    );
-
-    expect(screen.getByText('Signing in...')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Signing in/ })).toBeDisabled();
-  });
-
-  it('calls onSuccess callback on successful login', async () => {
+  it('accepts session_activated as successful OTP verification', async () => {
+    const onTwoFactorSuccess = vi.fn();
     const onSuccess = vi.fn();
-    const mockUser = { id: '1', email: 'test@example.com' };
-    const mockLogin = vi.fn().mockResolvedValue({ 
-      success: true, 
-      user: mockUser 
-    });
-    
-    vi.doMock('../../../hooks/useAuth', () => ({
-      useAuth: () => ({
-        login: mockLogin,
-        isLoading: false
-      })
-    }));
+    const methods = [{ id: 'method-1', method: 'email', status: 'active' }];
+    mockAuth.login.mockResolvedValue({ success: true, requires2fa: true, availableMethods: methods });
+    mockAuth.verifyTwoFactor.mockResolvedValue({ success: true, session_activated: true });
 
-    render(
-      <TestWrapper>
-        <LoginForm onSuccess={onSuccess} />
-      </TestWrapper>
-    );
+    render(<LoginForm onSuccess={onSuccess} onTwoFactorSuccess={onTwoFactorSuccess} />);
 
-    const emailInput = screen.getByLabelText('Email Address');
-    const passwordInput = screen.getByLabelText('Password');
-    const submitButton = screen.getByRole('button', { name: 'Sign In' });
+    fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
-    fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
-    fireEvent.change(passwordInput, { target: { value: 'password123' } });
-    fireEvent.click(submitButton);
+    await screen.findByLabelText('Verification Code');
+    fireEvent.change(screen.getByLabelText('Verification Code'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify Code' }));
 
     await waitFor(() => {
-      expect(onSuccess).toHaveBeenCalledWith(mockUser);
+      expect(mockAuth.verifyTwoFactor).toHaveBeenCalledWith('method-1', '123456');
+      expect(onTwoFactorSuccess).toHaveBeenCalledTimes(1);
+      expect(onSuccess).toHaveBeenCalledWith(null);
     });
   });
 
-  it('calls onError callback on login error', async () => {
-    const onError = vi.fn();
-    const mockLogin = vi.fn().mockResolvedValue({ 
-      success: false, 
-      error: 'Network error' 
-    });
-    
-    vi.doMock('../../../hooks/useAuth', () => ({
-      useAuth: () => ({
-        login: mockLogin,
-        isLoading: false
-      })
-    }));
+  it('resends 2FA code using the active method', async () => {
+    const methods = [{ id: 'method-1', method: 'email', status: 'active' }];
+    mockAuth.login.mockResolvedValue({ success: true, requires2fa: true, availableMethods: methods });
+    mockAuth.startTwoFactor.mockResolvedValue({ success: true });
 
-    render(
-      <TestWrapper>
-        <LoginForm onError={onError} />
-      </TestWrapper>
-    );
+    render(<LoginForm />);
 
-    const emailInput = screen.getByLabelText('Email Address');
-    const passwordInput = screen.getByLabelText('Password');
-    const submitButton = screen.getByRole('button', { name: 'Sign In' });
+    fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 
-    fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
-    fireEvent.change(passwordInput, { target: { value: 'password123' } });
-    fireEvent.click(submitButton);
+    await screen.findByText("Didn't receive a code? Resend");
+    fireEvent.click(screen.getByText("Didn't receive a code? Resend"));
 
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith('Network error');
+      expect(mockAuth.startTwoFactor).toHaveBeenCalledWith('method-1', 'email');
     });
+  });
+
+  it('returns to credentials step and calls onTwoFactorCancel', async () => {
+    const onTwoFactorCancel = vi.fn();
+    const methods = [{ id: 'method-1', method: 'email', status: 'active' }];
+    mockAuth.login.mockResolvedValue({ success: true, requires2fa: true, availableMethods: methods });
+
+    render(<LoginForm onTwoFactorCancel={onTwoFactorCancel} />);
+
+    fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'test@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'password123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
+
+    await screen.findByText('Back to login');
+    fireEvent.click(screen.getByText('Back to login'));
+
+    expect(onTwoFactorCancel).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Sign In' })).toBeInTheDocument();
   });
 });

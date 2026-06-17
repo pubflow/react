@@ -1,144 +1,134 @@
 /**
  * Login Form Component for React
- * 
- * Professional login form with dynamic styling based on environment variables
+ *
+ * Professional login form with login-time 2FA and dynamic branding.
  */
 
-import React, { useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { processLogoUrl } from '../../utils/asset-utils';
+import { PubflowContext } from '../../context/PubflowProvider';
 import type { TwoFactorMethod } from '@pubflow/core';
 
-/**
- * Login form configuration
- */
 export interface LoginFormConfig {
-  /**
-   * Primary color for branding
-   */
   primaryColor?: string;
-
-  /**
-   * Secondary color for accents
-   */
   secondaryColor?: string;
-
-  /**
-   * Application name
-   */
   appName?: string;
-
-  /**
-   * Logo URL or component
-   */
   logo?: string | React.ReactNode;
-
-  /**
-   * Show password reset link
-   */
   showPasswordReset?: boolean;
-
-  /**
-   * Show account creation link
-   */
   showAccountCreation?: boolean;
-
-  /**
-   * Custom styling
-   */
   className?: string;
-
-  /**
-   * Redirect path after successful login
-   */
   redirectPath?: string;
+  subtitle?: string;
+  twoFactorSubtitle?: string;
+  passwordResetText?: string;
+  accountCreationText?: string;
 }
 
-/**
- * Login form props
- */
 export interface LoginFormProps {
-  /**
-   * Configuration options
-   */
   config?: LoginFormConfig;
-
-  /**
-   * Success callback
-   */
   onSuccess?: (user: any) => void;
-
-  /**
-   * Error callback
-   */
   onError?: (error: string) => void;
-
-  /**
-   * Password reset callback
-   */
   onPasswordReset?: () => void;
-
-  /**
-   * Account creation callback
-   */
   onAccountCreation?: () => void;
-
-  /**
-   * Pubflow instance ID
-   */
+  onTwoFactorRequired?: (methods: TwoFactorMethod[]) => void;
+  onTwoFactorSuccess?: () => void;
+  onTwoFactorCancel?: () => void;
   instanceId?: string;
 }
 
-/**
- * Professional login form component
- */
+function getEnv(keys: string[]): string | undefined {
+  const importMetaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
+
+  for (const key of keys) {
+    const value = importMetaEnv?.[key] ?? (typeof process !== 'undefined' ? process.env?.[key] : undefined);
+    if (value) return value;
+  }
+
+  return undefined;
+}
+
+function getMethodLabel(method: TwoFactorMethod): string {
+  const name = method.method.toUpperCase();
+  return method.identifier ? `${name} - ${method.identifier}` : name;
+}
+
 export function LoginForm({
   config = {},
   onSuccess,
   onError,
   onPasswordReset,
   onAccountCreation,
+  onTwoFactorRequired,
+  onTwoFactorSuccess,
+  onTwoFactorCancel,
   instanceId
 }: LoginFormProps) {
-  const { login, verifyTwoFactor, startTwoFactor, isLoading } = useAuth(instanceId);
+  const {
+    login,
+    verifyTwoFactor,
+    startTwoFactor,
+    isLoading,
+    twoFactorPending,
+    twoFactorMethods
+  } = useAuth(instanceId);
+  const pubflowContext = useContext(PubflowContext);
 
-  // Form state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
-
-  // 2FA state
+  const [error, setError] = useState('');
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
   const [otpCode, setOtpCode] = useState('');
   const [pendingMethods, setPendingMethods] = useState<TwoFactorMethod[]>([]);
   const [activeMethodId, setActiveMethodId] = useState<string | null>(null);
-  const [activeMethodName, setActiveMethodName] = useState<string>('email');
+  const [activeMethodName, setActiveMethodName] = useState('email');
   const [otpLoading, setOtpLoading] = useState(false);
 
-  // Configuration with defaults
   const {
-    primaryColor = process.env.REACT_APP_PRIMARY_COLOR || '#006aff',
-    secondaryColor = process.env.REACT_APP_SECONDARY_COLOR || '#4a90e2',
-    appName = process.env.REACT_APP_NAME || 'Pubflow',
-    logo = process.env.REACT_APP_LOGO,
+    primaryColor = pubflowContext.theme?.primaryColor || getEnv(['VITE_PRIMARY_COLOR', 'NEXT_PUBLIC_PRIMARY_COLOR', 'REACT_APP_PRIMARY_COLOR']) || '#006aff',
+    secondaryColor = pubflowContext.theme?.secondaryColor || getEnv(['VITE_SECONDARY_COLOR', 'NEXT_PUBLIC_SECONDARY_COLOR', 'REACT_APP_SECONDARY_COLOR']) || '#4a90e2',
+    appName = pubflowContext.theme?.appName || getEnv(['VITE_APP_NAME', 'NEXT_PUBLIC_APP_NAME', 'REACT_APP_NAME']) || 'Pubflow',
+    logo = pubflowContext.theme?.logo || getEnv(['VITE_APP_LOGO', 'NEXT_PUBLIC_APP_LOGO', 'REACT_APP_LOGO']),
     showPasswordReset = true,
     showAccountCreation = true,
     className = '',
-    redirectPath
+    redirectPath,
+    subtitle = 'Sign in to your account',
+    twoFactorSubtitle = 'Enter the verification code we sent you.',
+    passwordResetText = 'Forgot password?',
+    accountCreationText = 'Create New Account'
   } = config;
 
-  // Handle form submission
+  useEffect(() => {
+    if (!twoFactorPending) return;
+
+    const methods = twoFactorMethods ?? [];
+    setPendingMethods(methods);
+    if (methods.length > 0 && !activeMethodId) {
+      setActiveMethodId(methods[0].id);
+      setActiveMethodName(methods[0].method);
+    }
+    setStep('otp');
+  }, [twoFactorPending, twoFactorMethods, activeMethodId]);
+
+  const finishSuccess = (user?: any) => {
+    if (onSuccess) onSuccess(user ?? null);
+    if (redirectPath && typeof window !== 'undefined') {
+      window.location.href = redirectPath;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Basic validation
     if (!email.trim()) {
       setError('Email is required');
       return;
     }
+
     if (!password.trim()) {
       setError('Password is required');
       return;
@@ -148,7 +138,6 @@ export function LoginForm({
       const result = await login({ email: email.toLowerCase().trim(), password });
 
       if (result.requires2fa) {
-        // Switch to OTP step
         const methods: TwoFactorMethod[] = result.availableMethods ?? [];
         setPendingMethods(methods);
         if (methods.length > 0) {
@@ -156,77 +145,81 @@ export function LoginForm({
           setActiveMethodName(methods[0].method);
         }
         setStep('otp');
+        if (onTwoFactorRequired) onTwoFactorRequired(methods);
         return;
       }
 
       if (result.success) {
-        if (onSuccess) {
-          onSuccess(result.user);
-        }
+        finishSuccess(result.user);
+        return;
+      }
 
-        // Handle redirect
-        if (redirectPath && typeof window !== 'undefined') {
-          window.location.href = redirectPath;
-        }
-      } else {
-        const errorMessage = result.error || 'Invalid credentials';
-        setError(errorMessage);
-        if (onError) {
-          onError(errorMessage);
-        }
-      }
+      const message = result.error || 'Invalid credentials';
+      setError(message);
+      if (onError) onError(message);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Connection error. Please try again.';
-      setError(errorMessage);
-      if (onError) {
-        onError(errorMessage);
-      }
+      const message = err instanceof Error ? err.message : 'Connection error. Please try again.';
+      setError(message);
+      if (onError) onError(message);
     }
   };
 
-  // Handle OTP verification
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeMethodId) return;
+    if (!activeMethodId) {
+      setError('No verification method is available.');
+      return;
+    }
+
     setError('');
     setOtpLoading(true);
+
     try {
       const result = await verifyTwoFactor(activeMethodId, otpCode.trim());
-      if (result.verified) {
-        if (onSuccess) onSuccess(null);
-        if (redirectPath && typeof window !== 'undefined') {
-          window.location.href = redirectPath;
-        }
-      } else {
-        const msg = result.error ||
-          (result.attempts_remaining !== undefined
-            ? `Incorrect code. ${result.attempts_remaining} attempt(s) remaining.`
-            : 'Incorrect code.');
-        setError(msg);
-        if (onError) onError(msg);
+      if (result.verified || result.session_activated) {
+        if (onTwoFactorSuccess) onTwoFactorSuccess();
+        finishSuccess(null);
+        return;
       }
+
+      const message = result.error ||
+        (result.attempts_remaining !== undefined
+          ? `Incorrect code. ${result.attempts_remaining} attempt(s) remaining.`
+          : 'Incorrect code.');
+      setError(message);
+      if (onError) onError(message);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Verification failed';
-      setError(msg);
-      if (onError) onError(msg);
+      const message = err instanceof Error ? err.message : 'Verification failed';
+      setError(message);
+      if (onError) onError(message);
     } finally {
       setOtpLoading(false);
     }
   };
 
-  // Handle resend code
   const handleResend = async () => {
     if (!activeMethodId) return;
+
     setError('');
     setOtpLoading(true);
     try {
       await startTwoFactor(activeMethodId, activeMethodName);
-    } catch { /* ignore */ } finally {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not resend the code.';
+      setError(message);
+      if (onError) onError(message);
+    } finally {
       setOtpLoading(false);
     }
   };
 
-  // Dynamic styles
+  const handleMethodChange = (methodId: string) => {
+    const selected = pendingMethods.find(method => method.id === methodId);
+    setActiveMethodId(selected?.id ?? null);
+    setActiveMethodName(selected?.method ?? 'email');
+    setOtpCode('');
+  };
+
   const styles = {
     container: {
       maxWidth: '400px',
@@ -262,7 +255,7 @@ export function LoginForm({
       fontWeight: '700',
       color: '#1a1a1a',
       marginBottom: '8px',
-      letterSpacing: '-0.5px'
+      letterSpacing: '0'
     },
     subtitleText: {
       fontSize: '16px',
@@ -277,7 +270,7 @@ export function LoginForm({
       fontWeight: '600',
       color: '#333333',
       marginBottom: '8px',
-      letterSpacing: '-0.2px',
+      letterSpacing: '0',
       display: 'block'
     },
     inputContainer: {
@@ -320,11 +313,15 @@ export function LoginForm({
       cursor: 'pointer',
       marginTop: '8px',
       boxShadow: `0 4px 12px ${primaryColor}40`,
-      letterSpacing: '-0.2px',
+      letterSpacing: '0',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       gap: '8px'
+    },
+    secondaryButton: {
+      backgroundColor: secondaryColor,
+      boxShadow: `0 4px 12px ${secondaryColor}40`
     },
     errorContainer: {
       display: 'flex',
@@ -367,37 +364,53 @@ export function LoginForm({
 
   return (
     <div className={className} style={styles.container}>
-      {/* Logo Section */}
       <div style={styles.logoSection}>
         {logo && (
-          typeof logo === 'string' ? (
-            <img src={processLogoUrl(logo) as string} alt={`${appName} Logo`} style={styles.logo} />
-          ) : (
-            logo
-          )
+          typeof logo === 'string'
+            ? <img src={processLogoUrl(logo) as string} alt={`${appName} Logo`} style={styles.logo} />
+            : logo
         )}
         <h1 style={styles.welcomeText}>Welcome to {appName}</h1>
         <p style={styles.subtitleText}>
-          {step === 'otp' ? 'Enter the verification code we sent you.' : 'Sign in to your account'}
+          {step === 'otp' ? twoFactorSubtitle : subtitle}
         </p>
       </div>
 
-      {/* Error */}
       {error && (
         <div style={styles.errorContainer}>
-          <span style={{ color: '#ff4757', fontSize: '20px' }}>⚠</span>
+          <span style={{ color: '#ff4757', fontSize: '20px' }}>!</span>
           <span style={styles.errorText}>{error}</span>
         </div>
       )}
 
-      {/* ── OTP Step ── */}
       {step === 'otp' ? (
-        <form onSubmit={handleOtpSubmit}>
+        <form onSubmit={handleOtpSubmit} noValidate>
+          {pendingMethods.length > 1 && (
+            <div style={styles.inputGroup}>
+              <label style={styles.inputLabel}>Verification Method</label>
+              <div style={styles.inputContainer}>
+                <select
+                  style={{ ...styles.input, width: '100%' }}
+                  value={activeMethodId ?? ''}
+                  onChange={(e) => handleMethodChange(e.target.value)}
+                  disabled={otpLoading}
+                >
+                  {pendingMethods.map(method => (
+                    <option key={method.id} value={method.id}>
+                      {getMethodLabel(method)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
           <div style={styles.inputGroup}>
-            <label style={styles.inputLabel}>Verification Code</label>
+            <label htmlFor="pubflow-otp-code" style={styles.inputLabel}>Verification Code</label>
             <div style={styles.inputContainer}>
-              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>🔐</span>
+              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>#</span>
               <input
+                id="pubflow-otp-code"
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
@@ -423,7 +436,7 @@ export function LoginForm({
             }}
             disabled={otpLoading || otpCode.length < 6}
           >
-            {otpLoading ? '⟳ Verifying…' : 'Verify Code'}
+            {otpLoading ? 'Verifying...' : 'Verify Code'}
           </button>
 
           <div style={{ textAlign: 'center', marginTop: '16px' }}>
@@ -431,27 +444,32 @@ export function LoginForm({
               type="button"
               style={{ ...styles.linkButton, fontSize: '14px' }}
               onClick={handleResend}
-              disabled={otpLoading}
+              disabled={otpLoading || !activeMethodId}
             >
               Didn't receive a code? Resend
             </button>
             <button
               type="button"
               style={{ ...styles.linkButton, fontSize: '13px', color: '#888' }}
-              onClick={() => { setStep('credentials'); setError(''); setOtpCode(''); }}
+              onClick={() => {
+                setStep('credentials');
+                setError('');
+                setOtpCode('');
+                if (onTwoFactorCancel) onTwoFactorCancel();
+              }}
             >
-              ← Back to login
+              Back to login
             </button>
           </div>
         </form>
       ) : (
-        /* ── Credentials Step ── */
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div style={styles.inputGroup}>
-            <label style={styles.inputLabel}>Email Address</label>
+            <label htmlFor="pubflow-login-email" style={styles.inputLabel}>Email Address</label>
             <div style={styles.inputContainer}>
-              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>✉</span>
+              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>@</span>
               <input
+                id="pubflow-login-email"
                 type="email"
                 style={styles.input}
                 placeholder="Enter your email"
@@ -466,10 +484,11 @@ export function LoginForm({
           </div>
 
           <div style={styles.inputGroup}>
-            <label style={styles.inputLabel}>Password</label>
+            <label htmlFor="pubflow-login-password" style={styles.inputLabel}>Password</label>
             <div style={styles.inputContainer}>
-              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>🔒</span>
+              <span style={{ marginRight: '12px', opacity: 0.7, color: '#666' }}>*</span>
               <input
+                id="pubflow-login-password"
                 type={showPassword ? 'text' : 'password'}
                 style={styles.input}
                 placeholder="Enter your password"
@@ -485,7 +504,7 @@ export function LoginForm({
                 onClick={() => setShowPassword(!showPassword)}
                 disabled={isLoading}
               >
-                {showPassword ? '👁' : '👁‍🗨'}
+                {showPassword ? 'Hide' : 'Show'}
               </button>
             </div>
           </div>
@@ -507,7 +526,7 @@ export function LoginForm({
                 onClick={onPasswordReset}
                 disabled={isLoading}
               >
-                Forgot password?
+                {passwordResetText}
               </button>
             )}
           </div>
@@ -521,14 +540,7 @@ export function LoginForm({
             }}
             disabled={isLoading}
           >
-            {isLoading ? (
-              <>
-                <span style={{ animation: 'spin 1s linear infinite' }}>⟳</span>
-                Signing in...
-              </>
-            ) : (
-              'Sign In'
-            )}
+            {isLoading ? 'Signing in...' : 'Sign In'}
           </button>
 
           {showAccountCreation && (
@@ -539,19 +551,12 @@ export function LoginForm({
                 onClick={onAccountCreation}
                 disabled={isLoading}
               >
-                Create New Account
+                {accountCreationText}
               </button>
             </div>
           )}
         </form>
       )}
-
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
