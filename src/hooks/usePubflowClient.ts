@@ -133,6 +133,63 @@ function ultraFormsModules(forms: ReturnType<typeof moduleClient>) {
   };
 }
 
+function blogApi(blog: ReturnType<typeof moduleClient>, postTypes: ReturnType<typeof moduleClient>) {
+  return {
+    ...blog,
+    listPosts: (params?: QueryParams) => blog.get('', params),
+    createPost: (data: any) => blog.post('', data),
+    getPostById: (id: string) => blog.get(`/id/${id}`),
+    getPost: (slug: string, params?: QueryParams) => blog.get(`/${slug}`, params),
+    updatePost: (id: string, data: any) => blog.put(`/${id}`, data),
+    publishPost: (id: string) => blog.post(`/${id}/publish`, {}),
+    unpublishPost: (id: string) => blog.post(`/${id}/unpublish`, {}),
+    schedulePost: (id: string, scheduledAt: string) => blog.post(`/${id}/schedule`, { scheduled_at: scheduledAt }),
+    deletePost: (id: string) => blog.delete(`/${id}`),
+    restorePost: (id: string) => blog.post(`/${id}/restore`, {}),
+    getAuthor: (id: string) => blog.get(`/authors/${id}`),
+    uploadFeaturedImage: (id: string, file: Blob) => {
+      const form = new FormData();
+      form.append('image', file);
+      return blog.post(`/${id}/featured-image`, form);
+    },
+    deleteFeaturedImage: (id: string) => blog.delete(`/${id}/featured-image`),
+    listCategories: (params?: QueryParams) => blog.get('/categories', params),
+    createCategory: (data: any) => blog.post('/categories', data),
+    createCategoryBulk: (data: { names: string[]; lang?: string }) => blog.post('/categories/bulk', data),
+    updateCategory: (id: string, data: any) => blog.put(`/categories/${id}`, data),
+    deleteCategory: (id: string) => blog.delete(`/categories/${id}`),
+    listTags: (params?: QueryParams) => blog.get('/tags', params),
+    createTag: (data: any) => blog.post('/tags', data),
+    createTagBulk: (data: { names: string[] }) => blog.post('/tags/bulk', data),
+    updateTag: (id: string, data: any) => blog.put(`/tags/${id}`, data),
+    deleteTag: (id: string) => blog.delete(`/tags/${id}`),
+    listComments: (postId: string, params?: QueryParams) => blog.get(`/${postId}/comments`, params),
+    createComment: (postId: string, data: any) => blog.post(`/${postId}/comments`, data),
+    updateComment: (postId: string, commentId: string, data: any) => blog.put(`/${postId}/comments/${commentId}`, data),
+    deleteComment: (postId: string, commentId: string) => blog.delete(`/${postId}/comments/${commentId}`),
+    moderateComment: (commentId: string, data: { status: string }) => blog.post(`/comments/${commentId}/moderate`, data),
+    getReactions: (postId: string) => blog.get(`/${postId}/reactions`),
+    react: (postId: string, reactionType: string) => blog.post(`/${postId}/reactions`, { reaction_type: reactionType }),
+    bookmark: (postId: string) => blog.post(`/${postId}/bookmark`, {}),
+    removeBookmark: (postId: string) => blog.delete(`/${postId}/bookmark`),
+    listBookmarks: () => blog.get('/me/bookmarks'),
+    trackView: (postId: string) => blog.post(`/${postId}/view`, {}),
+    getStats: (postId: string) => blog.get(`/${postId}/stats`),
+    listTranslations: (postId: string) => blog.get(`/id/${postId}/translations`),
+    createTranslation: (postId: string, data: any) => blog.post(`/id/${postId}/translations`, data),
+    updateTranslation: (postId: string, lang: string, data: any) => blog.put(`/id/${postId}/translations/${lang}`, data),
+    deleteTranslation: (postId: string, lang: string) => blog.delete(`/id/${postId}/translations/${lang}`),
+    getSitemap: () => blog.get('/seo/sitemap.xml'),
+    listPostTypes: (params?: QueryParams) => postTypes.get('', params),
+    getPostType: (key: string) => postTypes.get(`/${key}`),
+    getPostTypeSchema: (key: string) => postTypes.get(`/${key}/schema`),
+    getPostTypeStats: (key: string) => postTypes.get(`/${key}/stats`),
+    createPostType: (data: any) => postTypes.post('', data),
+    updatePostType: (key: string, data: any) => postTypes.put(`/${key}`, data),
+    deletePostType: (key: string) => postTypes.delete(`/${key}`),
+  };
+}
+
 export function usePubflowClient(instanceId?: string) {
   const context = useContext(PubflowContext);
   const instance = instanceId || context.defaultInstance;
@@ -147,6 +204,7 @@ export function usePubflowClient(instanceId?: string) {
     const prefixes = config.modulePrefixes || {};
     const forms = moduleClient(pubflowInstance.apiClient, prefixes.forms || '/api/v1');
     const blog = moduleClient(pubflowInstance.apiClient, prefixes.blog || '/api/v1/posts');
+    const postTypes = moduleClient(pubflowInstance.apiClient, prefixes.postTypes || '/api/v1/post-types');
     const onboarding = moduleClient(pubflowInstance.apiClient, prefixes.onboarding || '/api/v1/onboarding');
     const payments = new BridgePaymentClient({
       baseUrl: config.paymentsUrl || config.apiUrl || config.baseUrl,
@@ -169,15 +227,7 @@ export function usePubflowClient(instanceId?: string) {
         submitByCode: (code: string, data: any) => forms.post(`/forms/by-code/${code}/submit`, data),
         saveDraft: (data: any) => forms.post('/drafts', data),
       },
-      blog: {
-        ...blog,
-        listPosts: (params?: QueryParams) => blog.get('', params),
-        getPost: (slug: string, params?: QueryParams) => blog.get(`/${slug}`, params),
-        getPostById: (id: string) => blog.get(`/id/${id}`),
-        createPost: (data: any) => blog.post('', data),
-        listCategories: (params?: QueryParams) => blog.get('/categories', params),
-        listTags: (params?: QueryParams) => blog.get('/tags', params),
-      },
+      blog: blogApi(blog, postTypes),
       onboarding: {
         ...onboarding,
         getState: (params?: QueryParams) => onboarding.get('', params),

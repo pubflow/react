@@ -4,7 +4,7 @@
  * A form component that integrates with Zod schemas and useBridgeCrud
  */
 import React, { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { Resolver, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useBridgeCrud } from '../../hooks/useBridgeCrud';
 import { BridgeFormProps, FieldConfig } from './types';
@@ -83,7 +83,7 @@ export function BridgeForm<T extends Record<string, any>>({
     trigger,
     reset
   } = useForm<T>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as Resolver<T>,
     defaultValues: (initialData || {}) as any
   });
 
